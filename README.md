@@ -6,20 +6,20 @@ Custom PocketMine-MP 5 fork built for production Bedrock servers. Fully optimize
 
 | Range | Protocols |
 |---|---|
-| **1.20.0 — 1.20.80** | 589, 594, 618, 622, 630, 649, 662, 671 |
-| **1.21.0 — 1.21.130** | 685, 686, 712, 729, 748, 766, 776, 786, 800, 818, 819, 827, 844, 859, 860, 898 |
-| **1.26.0 — 1.26.10** | 924, 944 |
+| **1.20.0 - 1.20.80** | 589, 594, 618, 622, 630, 649, 662, 671 |
+| **1.21.0 - 1.21.130** | 685, 686, 712, 729, 748, 766, 776, 786, 800, 818, 819, 827, 844, 859, 860, 898 |
+| **1.26.0 - 1.26.10** | 924, 944 |
 
 > **26 protocol versions** supported simultaneously. Players on any version from 1.20.0 to 1.26.10 can connect to the same server.
 
 ## Optimizations
 
 ### Multiversion Protocol Engine
-- Per-protocol **block state dictionaries** — each version loads its own `canonical_block_states` and `block_state_meta_map`
-- Per-protocol **item type dictionaries** — versioned `required_item_list` ensures correct item IDs per client
-- Per-protocol **item tag mappings** — versioned `item_tags` for recipe and tag compatibility
-- Per-protocol **item schema downgrades** — `ItemIdMetaDowngrader` handles cross-version item meta translation
-- Zero data duplication — newer versions reuse older data files when block/item schemas haven't changed
+- Per-protocol **block state dictionaries** - each version loads its own `canonical_block_states` and `block_state_meta_map`
+- Per-protocol **item type dictionaries** - versioned `required_item_list` ensures correct item IDs per client
+- Per-protocol **item tag mappings** - versioned `item_tags` for recipe and tag compatibility
+- Per-protocol **item schema downgrades** - `ItemIdMetaDowngrader` handles cross-version item meta translation
+- Zero data duplication - newer versions reuse older data files when block/item schemas haven't changed
 
 ### Native Bedrock Command Autocompletion
 The core features a standalone, Bedrock-native command autocompletion system that allows any plugin to define complex overloads and parameter types without external dependencies.
