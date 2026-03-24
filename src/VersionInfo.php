@@ -30,7 +30,7 @@ use function is_int;
 use function str_repeat;
 
 final class VersionInfo{
-	public const NAME = "HeraCustom-PMMP";
+	public const NAME = "VesperCustom-PublicVersion";
 	public const BASE_VERSION = "5.39.3";
 	public const IS_DEVELOPMENT_BUILD = true;
 	public const BUILD_CHANNEL = "stable";

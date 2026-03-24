@@ -316,7 +316,7 @@ class Server{
 	private array $entityEventBroadcasters = [];
 
 	public function getName() : string{
-		return "HeraCustom-PMMP";
+		return "VesperCustom-PublicVersion";
 	}
 
 	public function isRunning() : bool{
@@ -1044,7 +1044,7 @@ class Server{
 			$this->network = new Network($this->logger);
 			$this->network->setName($this->getMotd());
 
-				$this->logger->info(TextFormat::GRAY . "HeraCustom-PMMP" . TextFormat::GRAY . " por " . TextFormat::GOLD . "Dvyskz - Yxiaro - Ptyxzz" . TextFormat::RESET);
+				$this->logger->info(TextFormat::GRAY . "VesperCustom-PublicVersion" . TextFormat::GRAY . " por " . TextFormat::GOLD . "sxvape - sxmoha" . TextFormat::RESET);
 				$this->logger->info($this->language->translate(KnownTranslationFactory::pocketmine_server_info(
 					$this->getName(),
 					(VersionInfo::IS_DEVELOPMENT_BUILD ? TextFormat::YELLOW : "") . $this->getPocketMineVersion() . TextFormat::RESET
