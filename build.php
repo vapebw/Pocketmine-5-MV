@@ -11,3 +11,4 @@ $phar->stopBuffering();
 echo "PocketmineMP.phar build successfully\n";
 
 // js a .php so you can easily build the Pocketmine phar, on a cmd in you directory where the pocketmine is use php build.php and its all!
+// also i recommend to use "php -d phar.readonly=0 build.php" to build the phar.
