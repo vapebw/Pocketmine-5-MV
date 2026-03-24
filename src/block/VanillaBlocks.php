@@ -1003,6 +1003,7 @@ final class VanillaBlocks{
 
 		$flowerTypeInfo = new Info(BreakInfo::instant(), [Tags::POTTABLE_PLANTS]);
 		self::register("dandelion", fn(BID $id) => new Flower($id, "Dandelion", $flowerTypeInfo));
+		self::register("golden_dandelion", fn(BID $id) => new GoldenDandelion($id, "Golden Dandelion", $flowerTypeInfo));
 		self::register("poppy", fn(BID $id) => new Flower($id, "Poppy", $flowerTypeInfo));
 		self::register("allium", fn(BID $id) => new Flower($id, "Allium", $flowerTypeInfo));
 		self::register("azure_bluet", fn(BID $id) => new Flower($id, "Azure Bluet", $flowerTypeInfo));
