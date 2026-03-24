@@ -21,7 +21,7 @@ Custom PocketMine-MP 5 fork built for production Bedrock servers. Fully optimize
 - Per-protocol **item schema downgrades** — `ItemIdMetaDowngrader` handles cross-version item meta translation
 - Zero data duplication — newer versions reuse older data files when block/item schemas haven't changed
 
-### 🚀 Native Bedrock Command Autocompletion
+### Native Bedrock Command Autocompletion
 The core features a standalone, Bedrock-native command autocompletion system that allows any plugin to define complex overloads and parameter types without external dependencies.
 
 #### Key Core Classes
