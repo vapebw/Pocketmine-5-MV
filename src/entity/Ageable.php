@@ -25,4 +25,9 @@ namespace pocketmine\entity;
 
 interface Ageable{
 	public function isBaby() : bool;
+
+	/**
+	 * Sets the baby state of this entity
+	 */
+	public function setBaby(bool $baby = true) : void;
 }

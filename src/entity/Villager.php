@@ -89,6 +89,14 @@ class Villager extends Living implements Ageable{
 		return $this->baby;
 	}
 
+	/**
+	 * Sets whether this villager is a baby
+	 */
+	public function setBaby(bool $baby = true) : void{
+		$this->baby = $baby;
+		$this->networkPropertiesDirty = true;
+	}
+
 	public function getPickedItem() : ?Item{
 		return VanillaItems::VILLAGER_SPAWN_EGG();
 	}

@@ -34,6 +34,14 @@ abstract class WaterAnimal extends Living implements Ageable{
 		return $this->baby;
 	}
 
+	/**
+	 * Sets the baby state of this water animal
+	 */
+	public function setBaby(bool $baby = true) : void{
+		$this->baby = $baby;
+		$this->networkPropertiesDirty = true;
+	}
+
 	public function canBreathe() : bool{
 		return $this->isUnderwater();
 	}
