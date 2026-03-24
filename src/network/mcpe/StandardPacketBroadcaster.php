@@ -36,7 +36,7 @@ use function strlen;
 final class StandardPacketBroadcaster implements PacketBroadcaster{
 	public function __construct(
 		private Server $server,
-		private int $protocolId
+		private int $protocolId = ProtocolInfo::CURRENT_PROTOCOL
 	){}
 
 	public function broadcastPackets(array $recipients, array $packets) : void{
