@@ -26,6 +26,7 @@ namespace pocketmine\network\mcpe;
 use pmmp\encoding\ByteBufferWriter;
 use pocketmine\event\server\DataPacketSendEvent;
 use pocketmine\network\mcpe\protocol\serializer\PacketBatch;
+use pocketmine\network\mcpe\protocol\ProtocolInfo;
 use pocketmine\Server;
 use pocketmine\timings\Timings;
 use function count;

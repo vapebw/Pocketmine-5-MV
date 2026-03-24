@@ -58,6 +58,8 @@ use pocketmine\network\mcpe\handler\PreSpawnPacketHandler;
 use pocketmine\network\mcpe\handler\ResourcePacksPacketHandler;
 use pocketmine\network\mcpe\handler\SessionStartPacketHandler;
 use pocketmine\network\mcpe\handler\SpawnResponsePacketHandler;
+use pocketmine\network\mcpe\command\BedrockCommandRegistry;
+use pocketmine\network\mcpe\command\SoftEnumManager;
 use pocketmine\network\mcpe\protocol\AvailableCommandsPacket;
 use pocketmine\network\mcpe\protocol\ChunkRadiusUpdatedPacket;
 use pocketmine\network\mcpe\protocol\ClientboundCloseFormPacket;
@@ -1172,18 +1174,21 @@ class NetworkSession{
 	public function syncAvailableCommands() : void{
 		$commandData = [];
 
-		$registry = null;
-		$softEnumManager = null;
+		$registry = BedrockCommandRegistry::getInstance();
+		$softEnumManager = SoftEnumManager::getInstance();
+		
+		$vapeRegistry = null;
 		if(class_exists(\vape\systems\commands\BedrockCommandRegistry::class)){
-			$registry = \vape\systems\commands\BedrockCommandRegistry::getInstance();
-		}
-		if(class_exists(\vape\systems\commands\SoftEnumManager::class)){
-			$softEnumManager = \vape\systems\commands\SoftEnumManager::getInstance();
+			$vapeRegistry = \vape\systems\commands\BedrockCommandRegistry::getInstance();
 		}
 
 		$softEnumsForPacket = [];
-		if($softEnumManager !== null){
-			$softEnumsForPacket = array_values($softEnumManager->getAllEnums());
+		$softEnumsForPacket = array_values($softEnumManager->getAllEnums());
+		if(class_exists(\vape\systems\commands\SoftEnumManager::class)){
+			$vapeSoftEnumManager = \vape\systems\commands\SoftEnumManager::getInstance();
+			foreach($vapeSoftEnumManager->getAllEnums() as $se){
+				$softEnumsForPacket[] = $se;
+			}
 		}
 
 		$softEnumCache = [];
@@ -1211,7 +1216,10 @@ class NetworkSession{
 			$description = $command->getDescription();
 			$descStr = $description instanceof Translatable ? $this->player->getLanguage()->translate($description) : $description;
 
-			$bedrockOverloads = $registry !== null ? $registry->get($lname) : null;
+			$bedrockOverloads = $registry->get($lname);
+			if($bedrockOverloads === null && $vapeRegistry !== null){
+				$bedrockOverloads = $vapeRegistry->get($lname);
+			}
 
 			if($bedrockOverloads !== null){
 				$overloads = [];

@@ -21,12 +21,42 @@ Custom PocketMine-MP 5 fork built for production Bedrock servers. Fully optimize
 - Per-protocol **item schema downgrades** — `ItemIdMetaDowngrader` handles cross-version item meta translation
 - Zero data duplication — newer versions reuse older data files when block/item schemas haven't changed
 
-### Bedrock-Native Command Autocompletion
-- Custom `BedrockCommandRegistry` for registering commands with full Bedrock parameter types
-- `SoftEnumManager` for dynamic enum autocompletion (player names, faction names, etc.)
-- Native support for `HardEnum`, `SoftEnum`, and `CommandOverload` with chaining
-- Per-protocol `convertArg()` ensures argument types are correctly encoded for each client version
-- Full parameter type support: `TARGET`, `INT`, `STRING`, `RAWTEXT`, `POSITION`, `FLOAT`, and more
+### 🚀 Native Bedrock Command Autocompletion
+The core features a standalone, Bedrock-native command autocompletion system that allows any plugin to define complex overloads and parameter types without external dependencies.
+
+#### Key Core Classes
+- `pocketmine\network\mcpe\command\BedrockCommandRegistry`
+- `pocketmine\network\mcpe\command\BedrockOverload`
+- `pocketmine\network\mcpe\command\BedrockParameter`
+- `pocketmine\network\mcpe\command\SoftEnumManager`
+
+#### How to use in any plugin
+Any developer can add autocompletion to their commands by registering overloads in the registry during their plugin's `onEnable()`:
+
+```php
+use pocketmine\network\mcpe\command\BedrockCommandRegistry;
+use pocketmine\network\mcpe\command\BedrockOverload;
+use pocketmine\network\mcpe\command\BedrockParameter;
+use pocketmine\network\mcpe\protocol\types\command\CommandParameterTypes;
+
+$overloads = [
+    new BedrockOverload([
+        new BedrockParameter("action", CommandParameterTypes::ID, false, ["stats", "info"]),
+        new BedrockParameter("target", CommandParameterTypes::TARGET, true)
+    ])
+];
+BedrockCommandRegistry::getInstance()->register("mycommand", $overloads);
+```
+
+#### Dynamic Autocompletion (Soft Enums)
+Use the `SoftEnumManager` to register or update dynamic lists (like custom mini-game arenas or teams) that update in real-time for all connected clients:
+```php
+use pocketmine\network\mcpe\command\SoftEnumManager;
+
+SoftEnumManager::getInstance()->registerEnum("arenas", ["peak", "valley", "reef"]);
+// Later, to update:
+SoftEnumManager::getInstance()->addValue("arenas", "volcano");
+```
 
 ### Network Layer
 - Protocol-aware packet encoding/decoding — `encode($serializer, $protocolId)` and `decode($stream, $protocolId)`
