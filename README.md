@@ -37,8 +37,8 @@ Custom PocketMine-MP 5 fork built for production Bedrock servers. Fully optimize
 - Full block state serialization/deserialization pipeline with fallback to `info_update`
 ## Drop 1 2026 (1.26.10)
 Latest update includes:
-- **Protocol 944** — Registered with full multiversion backward compatibility
-- **Golden Dandelion** — New flower block with standard placement rules
+- **Protocol 944** - Registered with full multiversion backward compatibility
+- **Golden Dandelion** - New flower block with standard placement rules
 - **Spawn Egg Baby Behavior** — Using a spawn egg on a matching ageable mob spawns the baby variant
 ## Architecture
 vendor/nethergamesmc/bedrock-protocol/ ├── src/ProtocolInfo.php # Protocol constants & accepted versions ├── src/packets/ # All Bedrock protocol packets └── src/types/entity/ # Entity metadata flags & properties
