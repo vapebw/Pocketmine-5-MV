@@ -86,6 +86,9 @@ final class ClientData{
 	public int $MemoryTier;
 
 	public bool $OverrideSkin;
+	
+	/** >= ProtocolInfo::PROTOCOL_1_21_60 */
+	public string $PartyId = "";
 
 	/**
 	 * @var ClientDataPersonaSkinPiece[]
