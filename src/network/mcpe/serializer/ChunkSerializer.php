@@ -86,16 +86,15 @@ final class ChunkSerializer{
 	 * @return string[]
 	 */
 	public static function serializeSubChunks(Chunk $chunk, int $dimensionId, TypeConverter $typeConverter) : array{
-		$stream = new ByteBufferWriter();
 		$subChunks = [];
-
 		$subChunkCount = self::getSubChunkCount($chunk, $dimensionId);
-		$writtenCount = 0;
-
 		[$minSubChunkIndex, ] = self::getDimensionChunkBounds($dimensionId);
-		for($y = $minSubChunkIndex; $writtenCount < $subChunkCount; ++$y, ++$writtenCount){
+
+		$blockTranslator = $typeConverter->getBlockTranslator();
+		$stream = new ByteBufferWriter();
+		for($y = $minSubChunkIndex, $writtenCount = 0; $writtenCount < $subChunkCount; ++$y, ++$writtenCount){
 			$stream->clear();
-			self::serializeSubChunk($chunk->getSubChunk($y), $typeConverter->getBlockTranslator(), $stream, false);
+			self::serializeSubChunk($chunk->getSubChunk($y), $blockTranslator, $stream, false);
 			$subChunks[] = $stream->getData();
 		}
 
@@ -105,12 +104,23 @@ final class ChunkSerializer{
 	/**
 	 * @phpstan-param DimensionIds::* $dimensionId
 	 */
+	public static function serializeSubChunksToStream(Chunk $chunk, int $dimensionId, TypeConverter $typeConverter, ByteBufferWriter $stream) : void{
+		$subChunkCount = self::getSubChunkCount($chunk, $dimensionId);
+		[$minSubChunkIndex, ] = self::getDimensionChunkBounds($dimensionId);
+
+		$blockTranslator = $typeConverter->getBlockTranslator();
+		for($y = $minSubChunkIndex, $writtenCount = 0; $writtenCount < $subChunkCount; ++$y, ++$writtenCount){
+			self::serializeSubChunk($chunk->getSubChunk($y), $blockTranslator, $stream, false);
+		}
+	}
+
+	/**
+	 * @phpstan-param DimensionIds::* $dimensionId
+	 */
 	public static function serializeFullChunk(Chunk $chunk, int $dimensionId, TypeConverter $typeConverter, ?string $tiles = null) : string{
 		$stream = new ByteBufferWriter();
 
-		foreach(self::serializeSubChunks($chunk, $dimensionId, $typeConverter) as $subChunk){
-			$stream->writeByteArray($subChunk);
-		}
+		self::serializeSubChunksToStream($chunk, $dimensionId, $typeConverter, $stream);
 
 		self::serializeBiomes($chunk, $dimensionId, $stream);
 		self::serializeChunkData($chunk, $stream, $typeConverter, $tiles);
@@ -124,9 +134,18 @@ final class ChunkSerializer{
 	public static function serializeBiomes(Chunk $chunk, int $dimensionId, ByteBufferWriter $stream) : void{
 		[$minSubChunkIndex, $maxSubChunkIndex] = self::getDimensionChunkBounds($dimensionId);
 		$biomeIdMap = LegacyBiomeIdToStringIdMap::getInstance();
+
+		$cache = [];
 		//all biomes must always be written :(
 		for($y = $minSubChunkIndex; $y <= $maxSubChunkIndex; ++$y){
-			self::serializeBiomePalette($chunk->getSubChunk($y)->getBiomeArray(), $biomeIdMap, $stream);
+			$biomes = $chunk->getSubChunk($y)->getBiomeArray();
+			$id = spl_object_id($biomes);
+			if(!isset($cache[$id])){
+				$temp = new ByteBufferWriter();
+				self::serializeBiomePalette($biomes, $biomeIdMap, $temp);
+				$cache[$id] = $temp->getData();
+			}
+			$stream->writeByteArray($cache[$id]);
 		}
 	}
 
@@ -175,10 +194,9 @@ final class ChunkSerializer{
 					$stream->writeByteArray($nbtSerializer->write(new TreeRoot($state->toNbt())));
 				}
 			}else{
-				//we would use writeSignedIntArray() here, but the gains of writing in batch are negated by the cost of
-				//allocating a temporary array for the mapped palette IDs, especially for small palettes
+				$networkIdCache = $blockTranslator->getNetworkIdCache();
 				foreach($palette as $p){
-					VarInt::writeSignedInt($stream, $blockTranslator->internalIdToNetworkId($p));
+					VarInt::writeSignedInt($stream, $networkIdCache[$p] ?? $blockTranslator->internalIdToNetworkId($p));
 				}
 			}
 		}
