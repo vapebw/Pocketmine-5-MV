@@ -59,16 +59,16 @@ class SetSpawnPositionPacket extends DataPacket implements ClientboundPacket{
 
 	protected function decodePayload(ByteBufferReader $in, int $protocolId) : void{
 		$this->spawnType = VarInt::readSignedInt($in);
-		$this->spawnPosition = CommonTypes::getBlockPosition($in);
+		$this->spawnPosition = CommonTypes::getBlockPosition($in, $protocolId);
 		$this->dimension = VarInt::readSignedInt($in);
-		$this->causingBlockPosition = CommonTypes::getBlockPosition($in);
+		$this->causingBlockPosition = CommonTypes::getBlockPosition($in, $protocolId);
 	}
 
 	protected function encodePayload(ByteBufferWriter $out, int $protocolId) : void{
 		VarInt::writeSignedInt($out, $this->spawnType);
-		CommonTypes::putBlockPosition($out, $this->spawnPosition);
+		CommonTypes::putBlockPosition($out, $this->spawnPosition, $protocolId);
 		VarInt::writeSignedInt($out, $this->dimension);
-		CommonTypes::putBlockPosition($out, $this->causingBlockPosition);
+		CommonTypes::putBlockPosition($out, $this->causingBlockPosition, $protocolId);
 	}
 
 	public function handle(PacketHandlerInterface $handler) : bool{
