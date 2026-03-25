@@ -174,6 +174,16 @@ final class BlockTranslator{
 		$this->fallbackStateData = BlockStateData::current(BlockTypeNames::INFO_UPDATE, []);
 		$this->fallbackStateId = $this->blockStateDictionary->lookupStateIdFromData($this->fallbackStateData) ??
 			throw new AssumptionFailedError(BlockTypeNames::INFO_UPDATE . " should always exist");
+
+		//Pre-calculate the most common 1024 block states to avoid overhead during high-traffic chunk sends.
+		//This avoids the try-catch block and serializer overhead for the majority of world blocks.
+		for($i = 0; $i < 1024; ++$i){
+			try{
+				$this->networkIdCache[$i] = $this->blockStateDictionary->lookupStateIdFromData($this->blockStateSerializer->serialize($i)) ?? $this->fallbackStateId;
+			}catch(BlockStateSerializeException){
+				$this->networkIdCache[$i] = $this->fallbackStateId;
+			}
+		}
 	}
 
 	public function internalIdToNetworkId(int $internalStateId) : int{

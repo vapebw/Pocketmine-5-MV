@@ -30,7 +30,6 @@ use pocketmine\network\mcpe\protocol\ProtocolInfo;
 use pocketmine\Server;
 use pocketmine\timings\Timings;
 use function count;
-use function log;
 use function spl_object_id;
 use function strlen;
 
@@ -69,8 +68,8 @@ final class StandardPacketBroadcaster implements PacketBroadcaster{
 		foreach($packets as $packet){
 			$writer->clear(); //memory reuse let's gooooo
 			$buffer = NetworkSession::encodePacketTimed($writer, $this->protocolId, $packet);
-			//varint length prefix + packet buffer
-			$totalLength += (((int) log(strlen($buffer), 128)) + 1) + strlen($buffer);
+			$len = strlen($buffer);
+			$totalLength += ($len < 128 ? 1 : ($len < 16384 ? 2 : ($len < 2097152 ? 3 : ($len < 268435456 ? 4 : 5)))) + $len;
 			$packetBuffers[] = $buffer;
 		}
 
