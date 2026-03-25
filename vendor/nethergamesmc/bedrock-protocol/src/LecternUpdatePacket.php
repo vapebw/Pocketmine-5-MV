@@ -43,7 +43,7 @@ class LecternUpdatePacket extends DataPacket implements ServerboundPacket{
 	protected function decodePayload(ByteBufferReader $in, int $protocolId) : void{
 		$this->page = Byte::readUnsigned($in);
 		$this->totalPages = Byte::readUnsigned($in);
-		$this->blockPosition = CommonTypes::getBlockPosition($in);
+		$this->blockPosition = CommonTypes::getBlockPosition($in, $protocolId);
 		if($protocolId <= ProtocolInfo::PROTOCOL_1_20_60){
 			$this->dropBook = CommonTypes::getBool($in);
 		}
@@ -52,7 +52,7 @@ class LecternUpdatePacket extends DataPacket implements ServerboundPacket{
 	protected function encodePayload(ByteBufferWriter $out, int $protocolId) : void{
 		Byte::writeUnsigned($out, $this->page);
 		Byte::writeUnsigned($out, $this->totalPages);
-		CommonTypes::putBlockPosition($out, $this->blockPosition);
+		CommonTypes::putBlockPosition($out, $this->blockPosition, $protocolId);
 		if($protocolId <= ProtocolInfo::PROTOCOL_1_20_60){
 			CommonTypes::putBool($out, $this->dropBook);
 		}
