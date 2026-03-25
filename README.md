@@ -1,4 +1,4 @@
-# V. Public -Optimized Multiversion Fork
+# V. Public - Optimized Multiversion Fork
 
 Custom PocketMine-MP 5 fork built for production Bedrock servers. Fully optimized with native multiversion protocol support, Bedrock-native command autocompletion, and per-version data translation layers.
 
