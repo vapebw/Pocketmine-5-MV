@@ -44,8 +44,8 @@ final class UpdateSubChunkBlocksPacketEntry{
 
 	public function getSyncedUpdateType() : int{ return $this->syncedUpdateType; }
 
-	public static function read(ByteBufferReader $in) : self{
-		$blockPosition = CommonTypes::getBlockPosition($in);
+	public static function read(ByteBufferReader $in, int $protocolId = ProtocolInfo::CURRENT_PROTOCOL) : self{
+		$blockPosition = CommonTypes::getBlockPosition($in, $protocolId);
 		$blockRuntimeId = VarInt::readUnsignedInt($in);
 		$updateFlags = VarInt::readUnsignedInt($in);
 		$syncedUpdateActorUniqueId = VarInt::readUnsignedLong($in); //this can't use the standard method because it's unsigned as opposed to the usual signed... !!!!!!
@@ -54,8 +54,8 @@ final class UpdateSubChunkBlocksPacketEntry{
 		return new self($blockPosition, $blockRuntimeId, $updateFlags, $syncedUpdateActorUniqueId, $syncedUpdateType);
 	}
 
-	public function write(ByteBufferWriter $out) : void{
-		CommonTypes::putBlockPosition($out, $this->blockPosition);
+	public function write(ByteBufferWriter $out, int $protocolId = ProtocolInfo::CURRENT_PROTOCOL) : void{
+		CommonTypes::putBlockPosition($out, $this->blockPosition, $protocolId);
 		VarInt::writeUnsignedInt($out, $this->blockRuntimeId);
 		VarInt::writeUnsignedInt($out, $this->flags);
 		VarInt::writeUnsignedLong($out, $this->syncedUpdateActorUniqueId);

@@ -54,26 +54,26 @@ class UpdateSubChunkBlocksPacket extends DataPacket implements ClientboundPacket
 	public function getLayer1Updates() : array{ return $this->layer1Updates; }
 
 	protected function decodePayload(ByteBufferReader $in, int $protocolId) : void{
-		$this->baseBlockPosition = CommonTypes::getBlockPosition($in);
+		$this->baseBlockPosition = CommonTypes::getBlockPosition($in, $protocolId);
 		$this->layer0Updates = [];
 		for($i = 0, $count = VarInt::readUnsignedInt($in); $i < $count; ++$i){
-			$this->layer0Updates[] = UpdateSubChunkBlocksPacketEntry::read($in);
+			$this->layer0Updates[] = UpdateSubChunkBlocksPacketEntry::read($in, $protocolId);
 		}
 		$this->layer1Updates = [];
 		for($i = 0, $count = VarInt::readUnsignedInt($in); $i < $count; ++$i){
-			$this->layer1Updates[] = UpdateSubChunkBlocksPacketEntry::read($in);
+			$this->layer1Updates[] = UpdateSubChunkBlocksPacketEntry::read($in, $protocolId);
 		}
 	}
 
 	protected function encodePayload(ByteBufferWriter $out, int $protocolId) : void{
-		CommonTypes::putBlockPosition($out, $this->baseBlockPosition);
+		CommonTypes::putBlockPosition($out, $this->baseBlockPosition, $protocolId);
 		VarInt::writeUnsignedInt($out, count($this->layer0Updates));
 		foreach($this->layer0Updates as $update){
-			$update->write($out);
+			$update->write($out, $protocolId);
 		}
 		VarInt::writeUnsignedInt($out, count($this->layer1Updates));
 		foreach($this->layer1Updates as $update){
-			$update->write($out);
+			$update->write($out, $protocolId);
 		}
 	}
 
