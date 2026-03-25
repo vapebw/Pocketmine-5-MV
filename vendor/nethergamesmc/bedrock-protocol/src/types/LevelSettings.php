@@ -106,7 +106,7 @@ final class LevelSettings{
 			$this->hardcore = CommonTypes::getBool($in);
 		}
 		$this->difficulty = VarInt::readSignedInt($in);
-		$this->spawnPosition = CommonTypes::getBlockPosition($in);
+		$this->spawnPosition = CommonTypes::getBlockPosition($in, $protocolId);
 		$this->hasAchievementsDisabled = CommonTypes::getBool($in);
 		$this->editorWorldType = $protocolId >= ProtocolInfo::PROTOCOL_1_20_30 ? VarInt::readSignedInt($in) : (CommonTypes::getBool($in) ? EditorWorldType::PROJECT : EditorWorldType::NON_EDITOR);
 		$this->createdInEditorMode = CommonTypes::getBool($in);
@@ -167,7 +167,7 @@ final class LevelSettings{
 			CommonTypes::putBool($out, $this->hardcore);
 		}
 		VarInt::writeSignedInt($out, $this->difficulty);
-		CommonTypes::putBlockPosition($out, $this->spawnPosition);
+		CommonTypes::putBlockPosition($out, $this->spawnPosition, $protocolId);
 		CommonTypes::putBool($out, $this->hasAchievementsDisabled);
 		if($protocolId >= ProtocolInfo::PROTOCOL_1_20_30){
 			VarInt::writeSignedInt($out, $this->editorWorldType);
