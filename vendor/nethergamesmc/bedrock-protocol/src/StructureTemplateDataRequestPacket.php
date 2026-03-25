@@ -47,15 +47,15 @@ class StructureTemplateDataRequestPacket extends DataPacket implements Serverbou
 
 	protected function decodePayload(ByteBufferReader $in, int $protocolId) : void{
 		$this->structureTemplateName = CommonTypes::getString($in);
-		$this->structureBlockPosition = CommonTypes::getBlockPosition($in);
-		$this->structureSettings = CommonTypes::getStructureSettings($in);
+		$this->structureBlockPosition = CommonTypes::getBlockPosition($in, $protocolId);
+		$this->structureSettings = CommonTypes::getStructureSettings($in, $protocolId);
 		$this->requestType = Byte::readUnsigned($in);
 	}
 
 	protected function encodePayload(ByteBufferWriter $out, int $protocolId) : void{
 		CommonTypes::putString($out, $this->structureTemplateName);
-		CommonTypes::putBlockPosition($out, $this->structureBlockPosition);
-		CommonTypes::putStructureSettings($out, $this->structureSettings);
+		CommonTypes::putBlockPosition($out, $this->structureBlockPosition, $protocolId);
+		CommonTypes::putStructureSettings($out, $protocolId, $this->structureSettings);
 		Byte::writeUnsigned($out, $this->requestType);
 	}
 
