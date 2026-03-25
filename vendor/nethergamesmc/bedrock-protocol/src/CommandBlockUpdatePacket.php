@@ -45,7 +45,7 @@ class CommandBlockUpdatePacket extends DataPacket implements ServerboundPacket{
 		$this->isBlock = CommonTypes::getBool($in);
 
 		if($this->isBlock){
-			$this->blockPosition = CommonTypes::getBlockPosition($in);
+			$this->blockPosition = CommonTypes::getBlockPosition($in, $protocolId);
 			$this->commandBlockMode = VarInt::readUnsignedInt($in);
 			$this->isRedstoneMode = CommonTypes::getBool($in);
 			$this->isConditional = CommonTypes::getBool($in);
@@ -69,7 +69,7 @@ class CommandBlockUpdatePacket extends DataPacket implements ServerboundPacket{
 		CommonTypes::putBool($out, $this->isBlock);
 
 		if($this->isBlock){
-			CommonTypes::putBlockPosition($out, $this->blockPosition);
+			CommonTypes::putBlockPosition($out, $this->blockPosition, $protocolId);
 			VarInt::writeUnsignedInt($out, $this->commandBlockMode);
 			CommonTypes::putBool($out, $this->isRedstoneMode);
 			CommonTypes::putBool($out, $this->isConditional);
