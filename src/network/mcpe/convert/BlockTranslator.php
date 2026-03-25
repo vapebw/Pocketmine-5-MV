@@ -234,4 +234,11 @@ final class BlockTranslator{
 	public function getBlockStateDictionary() : BlockStateDictionary{ return $this->blockStateDictionary; }
 
 	public function getFallbackStateData() : BlockStateData{ return $this->fallbackStateData; }
+
+	/**
+	 * @return int[]
+	 * @phpstan-return array<int, int>
+	 * @internal This should only be used by the ChunkSerializer for performance reasons.
+	 */
+	public function getNetworkIdCache() : array{ return $this->networkIdCache; }
 }
