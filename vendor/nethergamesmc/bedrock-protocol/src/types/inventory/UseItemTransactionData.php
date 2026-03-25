@@ -86,7 +86,7 @@ class UseItemTransactionData extends TransactionData{
 		if($protocolId >= ProtocolInfo::PROTOCOL_1_21_20){
 			$this->triggerType = TriggerType::fromPacket(VarInt::readUnsignedInt($in));
 		}
-		$this->blockPosition = CommonTypes::getBlockPosition($in);
+		$this->blockPosition = CommonTypes::getBlockPosition($in, $protocolId);
 		$this->face = VarInt::readSignedInt($in);
 		$this->hotbarSlot = VarInt::readSignedInt($in);
 		$this->itemInHand = CommonTypes::getItemStackWrapper($in);
@@ -103,7 +103,7 @@ class UseItemTransactionData extends TransactionData{
 		if($protocolId >= ProtocolInfo::PROTOCOL_1_21_20){
 			VarInt::writeUnsignedInt($out, $this->triggerType->value);
 		}
-		CommonTypes::putBlockPosition($out, $this->blockPosition);
+		CommonTypes::putBlockPosition($out, $this->blockPosition, $protocolId);
 		VarInt::writeSignedInt($out, $this->face);
 		VarInt::writeSignedInt($out, $this->hotbarSlot);
 		CommonTypes::putItemStackWrapper($out, $this->itemInHand);
