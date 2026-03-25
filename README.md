@@ -108,5 +108,5 @@ src/item/
 ```
 
 ## Credits
-Forked by: **sxvape - sxmoha**
+Forked by: **sxvape - funao**
 discord.gg/vespermc
