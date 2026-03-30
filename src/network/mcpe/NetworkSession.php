@@ -1173,6 +1173,8 @@ class NetworkSession{
 
 	public function syncAvailableCommands() : void{
 		$commandData = [];
+		$processedCommandIds = [];
+		$processedLabels = [];
 
 		$registry = BedrockCommandRegistry::getInstance();
 		$softEnumManager = SoftEnumManager::getInstance();
@@ -1182,7 +1184,6 @@ class NetworkSession{
 			$vapeRegistry = \vape\systems\commands\BedrockCommandRegistry::getInstance();
 		}
 
-		$softEnumsForPacket = [];
 		$softEnumsForPacket = array_values($softEnumManager->getAllEnums());
 		if(class_exists(\vape\systems\commands\SoftEnumManager::class)){
 			$vapeSoftEnumManager = \vape\systems\commands\SoftEnumManager::getInstance();
@@ -1198,89 +1199,193 @@ class NetworkSession{
 
 		$protocolId = $this->getProtocolId();
 
-		foreach($this->server->getCommandMap()->getCommands() as $command){
-			if(isset($commandData[$command->getLabel()]) || $command->getLabel() === "help" || !$command->testPermissionSilent($this->player)){
+		foreach($this->server->getCommandMap()->getCommands() as $cmdKey => $command){
+			// Keys naturally contain all aliases and primary names (e.g. 'inventory', 'inventories').
+			// We MUST process each key to ensure Bedrock natively displays aliases without UI hiding.
+
+			if(!$command->testPermissionSilent($this->player)){
 				continue;
 			}
 
-			$lname = strtolower($command->getName());
-			$aliases = $command->getAliases();
-			$aliasObj = null;
-			if(count($aliases) > 0){
-				if(!in_array($lname, $aliases, true)){
-					$aliases[] = $lname;
+			$loweredLabel = strtolower((string)$cmdKey);
+
+			// Strict duplicate prevention: Skip all colon-prefixed commands naturally derived from PM's fallback maps.
+			if($loweredLabel === "help" || str_contains($loweredLabel, ":")){
+				continue;
+			}
+
+			$name = strtolower($command->getName());
+
+			$commandAliases = $command->getAliases();
+			$label = $command->getLabel();
+				$description = $command->getDescription();
+				$descStr = $description instanceof Translatable ? $this->player->getLanguage()->translate($description) : $description;
+
+				$bedrockOverloads = null;
+				$registryKeys = [$label, $loweredLabel, $name, explode(":", $label)[1] ?? $label, explode(":", $name)[1] ?? $name];
+				foreach($registryKeys as $key){
+					$bedrockOverloads = $registry->get(strtolower($key));
+					if($bedrockOverloads !== null) break;
 				}
-				$aliasObj = new CommandHardEnum(ucfirst($command->getName()) . "Aliases", $aliases);
-			}
+				
+				if($bedrockOverloads === null && $vapeRegistry !== null){
+					foreach($registryKeys as $key){
+						$bedrockOverloads = $vapeRegistry->get(strtolower($key));
+						if($bedrockOverloads !== null) break;
+					}
+				}
 
-			$description = $command->getDescription();
-			$descStr = $description instanceof Translatable ? $this->player->getLanguage()->translate($description) : $description;
-
-			$bedrockOverloads = $registry->get($lname);
-			if($bedrockOverloads === null && $vapeRegistry !== null){
-				$bedrockOverloads = $vapeRegistry->get($lname);
-			}
-
-			if($bedrockOverloads !== null){
-				$overloads = [];
-				foreach($bedrockOverloads as $bedrockOverload){
-					$params = [];
-					foreach($bedrockOverload->getParameters() as $bp){
-						if($bp->hasHardEnum()){
-							$params[] = CommandParameter::enum(
-								$bp->getName(),
-								new CommandHardEnum($lname . "_" . $bp->getName() . "_" . count($overloads), $bp->getEnumValues()),
-								$bp->getFlags(),
-								$bp->isOptional()
-							);
-						}elseif($bp->hasSoftEnum()){
-							$seName = $bp->getSoftEnumName();
-							if(isset($softEnumCache[$seName])){
-								$params[] = CommandParameter::softEnum(
+				if($bedrockOverloads !== null){
+					$overloads = [];
+					foreach($bedrockOverloads as $bedrockOverload){
+						$params = [];
+						foreach($bedrockOverload->getParameters() as $bp){
+							if($bp->hasHardEnum()){
+								$params[] = CommandParameter::enum(
 									$bp->getName(),
-									$softEnumCache[$seName],
+									new CommandHardEnum($loweredLabel . "_" . $bp->getName() . "_" . count($overloads), $bp->getEnumValues()),
 									$bp->getFlags(),
 									$bp->isOptional()
 								);
+							}elseif($bp->hasSoftEnum()){
+								$seName = $bp->getSoftEnumName();
+								if(isset($softEnumCache[$seName])){
+									$params[] = CommandParameter::softEnum(
+										$bp->getName(),
+										$softEnumCache[$seName],
+										$bp->getFlags(),
+										$bp->isOptional()
+									);
+								}else{
+									$params[] = CommandParameter::standard(
+										$bp->getName(),
+										AvailableCommandsPacket::convertArg($protocolId, AvailableCommandsPacket::ARG_TYPE_STRING),
+										$bp->getFlags(),
+										$bp->isOptional()
+									);
+								}
 							}else{
 								$params[] = CommandParameter::standard(
 									$bp->getName(),
-									AvailableCommandsPacket::convertArg($protocolId, AvailableCommandsPacket::ARG_TYPE_STRING),
+									AvailableCommandsPacket::convertArg($protocolId, $bp->getType()),
 									$bp->getFlags(),
 									$bp->isOptional()
 								);
 							}
-						}else{
-							$params[] = CommandParameter::standard(
-								$bp->getName(),
-								AvailableCommandsPacket::convertArg($protocolId, $bp->getType()),
-								$bp->getFlags(),
-								$bp->isOptional()
-							);
+						}
+						$overloads[] = new CommandOverload(chaining: $bedrockOverload->isChaining(), parameters: $params);
+					}
+				}else{
+					$subcommandNames = [];
+					$target = $command;
+					
+					$refl = new \ReflectionObject($target);
+					if($refl->hasProperty("formatStrings") || str_ends_with($refl->getName(), "Alias")){
+						try{
+							$usage = $target->getUsage();
+							$parts = explode(" ", trim($usage, "/ "));
+							if(count($parts) > 0){
+								$inner = $this->server->getCommandMap()->getCommand($parts[0]);
+								if($inner !== null && $inner !== $target){
+									$target = $inner;
+									$refl = new \ReflectionObject($target);
+								}
+							}
+						}catch(\Exception $e){}
+					}
+
+					$subCommandsValues = null;
+					foreach(["getSubCommands", "getSubcommands", "getCommands"] as $method){
+						if($refl->hasMethod($method)){
+							$m = $refl->getMethod($method);
+							if($m->isPublic() && $m->getNumberOfRequiredParameters() === 0){
+								$subCommandsValues = $m->invoke($target);
+								break;
+							}
 						}
 					}
-					$overloads[] = new CommandOverload(chaining: $bedrockOverload->isChaining(), parameters: $params);
+
+					if($subCommandsValues === null){
+						foreach(["subCommands", "subcommands", "commands"] as $prop){
+							if($refl->hasProperty($prop)){
+								$p = $refl->getProperty($prop);
+								$p->setAccessible(true);
+								$subCommandsValues = $p->getValue($target);
+								break;
+							}
+						}
+					}
+
+					if(is_array($subCommandsValues)){
+						foreach($subCommandsValues as $sc){
+							if(is_object($sc)){
+								$scName = null;
+								$scAliases = [];
+								$scReflection = new \ReflectionObject($sc);
+								if($scReflection->hasMethod("getName")){
+									$scName = $scReflection->getMethod("getName")->invoke($sc);
+								}
+								if($scReflection->hasMethod("getAliases")){
+									$scAliases = $scReflection->getMethod("getAliases")->invoke($sc);
+								}
+
+								if($scName !== null){
+									$subcommandNames[] = strtolower((string)$scName);
+									foreach($scAliases as $sca){
+										$subcommandNames[] = strtolower((string)$sca);
+									}
+								}
+							}elseif(is_string($sc)){
+								$subcommandNames[] = strtolower($sc);
+							}
+						}
+					}
+
+					$subcommandNames = array_unique(array_filter($subcommandNames));
+
+					if(count($subcommandNames) > 0){
+						$overloads = [
+							new CommandOverload(chaining: false, parameters: [
+								CommandParameter::enum("action", new CommandHardEnum($loweredLabel . "Subcommands", $subcommandNames), 0, false),
+								CommandParameter::standard("args", AvailableCommandsPacket::convertArg($protocolId, AvailableCommandsPacket::ARG_TYPE_RAWTEXT), 0, true)
+							])
+						];
+					}else{
+						$overloads = [
+							new CommandOverload(chaining: false, parameters: [CommandParameter::standard("args", AvailableCommandsPacket::convertArg($protocolId, AvailableCommandsPacket::ARG_TYPE_RAWTEXT), 0, true)])
+						];
+					}
 				}
-			}else{
-				$overloads = [
-					new CommandOverload(chaining: false, parameters: [CommandParameter::standard("args", AvailableCommandsPacket::convertArg($protocolId, AvailableCommandsPacket::ARG_TYPE_RAWTEXT), 0, true)])
-				];
+
+			$permLevel = CommandPermissions::NORMAL;
+			$perms = $command->getPermissions();
+			$isVanilla = $command instanceof \pocketmine\command\VanillaCommand;
+			if(!$isVanilla){
+				foreach($perms as $p){
+					if(str_starts_with($p, "pocketmine.command.")){
+						$isVanilla = true;
+						break;
+					}
+				}
+			}
+			if($isVanilla){
+				$permLevel = CommandPermissions::OPERATOR;
 			}
 
-			$data = new CommandData(
-				$lname,
+			// By passing 'null' for the alias object, we force Bedrock to treat each alias as a standalone 
+			// primary command, permanently fixing the "alias not showing in chat dropdown" bug.
+			$commandData[] = new CommandData(
+				$loweredLabel,
 				$descStr,
 				0,
-				CommandPermissions::NORMAL,
-				$aliasObj,
+				$permLevel,
+				null,
 				$overloads,
 				chainedSubCommandData: []
 			);
-
-			$commandData[$command->getLabel()] = $data;
 		}
 
-		$this->sendDataPacket(AvailableCommandsPacketAssembler::assemble(array_values($commandData), [], $softEnumsForPacket));
+		$this->sendDataPacket(AvailableCommandsPacketAssembler::assemble($commandData, [], $softEnumsForPacket));
 	}
 
 	/**
