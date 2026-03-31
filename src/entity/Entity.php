@@ -986,6 +986,10 @@ abstract class Entity{
 			return false;
 		}
 
+		if(!($this instanceof Player) && $this->motion->lengthSquared() <= 0.0001 && ($currentTick % 2 === 0)){
+			return true;
+		}
+
 		$tickDiff = $currentTick - $this->lastUpdate;
 		if($tickDiff <= 0){
 			if(!$this->justCreated){

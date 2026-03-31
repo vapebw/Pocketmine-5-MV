@@ -60,11 +60,15 @@ use pocketmine\network\mcpe\handler\SessionStartPacketHandler;
 use pocketmine\network\mcpe\handler\SpawnResponsePacketHandler;
 use pocketmine\network\mcpe\command\BedrockCommandRegistry;
 use pocketmine\network\mcpe\command\SoftEnumManager;
+use pocketmine\network\mcpe\protocol\ActorEventPacket;
+use pocketmine\network\mcpe\protocol\AnimatePacket;
 use pocketmine\network\mcpe\protocol\AvailableCommandsPacket;
 use pocketmine\network\mcpe\protocol\ChunkRadiusUpdatedPacket;
 use pocketmine\network\mcpe\protocol\ClientboundCloseFormPacket;
 use pocketmine\network\mcpe\protocol\ClientboundPacket;
 use pocketmine\network\mcpe\protocol\DisconnectPacket;
+use pocketmine\network\mcpe\protocol\InventoryTransactionPacket;
+use pocketmine\network\mcpe\protocol\LevelSoundEventPacket;
 use pocketmine\network\mcpe\protocol\ModalFormRequestPacket;
 use pocketmine\network\mcpe\protocol\MovePlayerPacket;
 use pocketmine\network\mcpe\protocol\NetworkChunkPublisherUpdatePacket;
@@ -72,6 +76,7 @@ use pocketmine\network\mcpe\protocol\OpenSignPacket;
 use pocketmine\network\mcpe\protocol\Packet;
 use pocketmine\network\mcpe\protocol\PacketDecodeException;
 use pocketmine\network\mcpe\protocol\PacketPool;
+use pocketmine\network\mcpe\protocol\PlayerAuthInputPacket;
 use pocketmine\network\mcpe\protocol\PlayerListPacket;
 use pocketmine\network\mcpe\protocol\PlayerStartItemCooldownPacket;
 use pocketmine\network\mcpe\protocol\PlayStatusPacket;
@@ -80,6 +85,7 @@ use pocketmine\network\mcpe\protocol\serializer\AvailableCommandsPacketAssembler
 use pocketmine\network\mcpe\protocol\serializer\PacketBatch;
 use pocketmine\network\mcpe\protocol\ServerboundPacket;
 use pocketmine\network\mcpe\protocol\ServerToClientHandshakePacket;
+use pocketmine\network\mcpe\protocol\SetActorMotionPacket;
 use pocketmine\network\mcpe\protocol\SetDifficultyPacket;
 use pocketmine\network\mcpe\protocol\SetPlayerGameTypePacket;
 use pocketmine\network\mcpe\protocol\SetSpawnPositionPacket;
@@ -609,7 +615,7 @@ class NetworkSession{
 				$writer->clear(); //memory reuse let's gooooo
 				$this->addToSendBuffer(self::encodePacketTimed($writer, $this->getProtocolId(), $evPacket));
 			}
-			if($immediate){
+			if($immediate || $packet instanceof AnimatePacket || $packet instanceof ActorEventPacket || $packet instanceof SetActorMotionPacket || $packet instanceof InventoryTransactionPacket || $packet instanceof MovePlayerPacket || $packet instanceof PlayerAuthInputPacket){
 				$this->flushGamePacketQueue();
 			}
 
