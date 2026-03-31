@@ -178,33 +178,21 @@ namespace pocketmine {
 	 */
 	function emit_performance_warnings(\Logger $logger){
 		if(ZEND_DEBUG_BUILD){
-			$logger->warning("This PHP binary was compiled in debug mode. This has a major impact on performance.");
+			$logger->warning("PHP binary compiled in debug mode (Performance impact)");
 		}
 		if(extension_loaded("xdebug") && (!function_exists('xdebug_info') || count(xdebug_info('mode')) !== 0)){
-			$logger->warning("Xdebug extension is enabled. This has a major impact on performance.");
+			$logger->warning("Xdebug extension is enabled (Performance impact)");
 		}
 		if(((int) ini_get('zend.assertions')) !== -1){
-			$logger->warning("Debugging assertions are enabled. This may degrade performance. To disable them, set `zend.assertions = -1` in php.ini.");
+			$logger->warning("Debugging assertions are enabled (Performance impact)");
 		}
 		if(\Phar::running(true) === ""){
-			$logger->warning("Non-packaged installation detected. This will degrade autoloading speed and make startup times longer.");
+			$logger->warning("Non-packaged installation detected");
 		}
 		if(function_exists('opcache_get_status') && ($opcacheStatus = opcache_get_status(false)) !== false){
 			$jitEnabled = $opcacheStatus["jit"]["on"] ?? false;
 			if($jitEnabled !== false){
-				$logger->warning(<<<'JIT_WARNING'
-
-
-	--------------------------------------- ! WARNING ! ---------------------------------------
-	You're using PHP with JIT enabled. This provides significant performance improvements.
-	HOWEVER, it is EXPERIMENTAL, and has already been seen to cause weird and unexpected bugs.
-	Proceed with caution.
-	If you want to report any bugs, make sure to mention that you have enabled PHP JIT.
-	To turn off JIT, change `opcache.jit` to `0` in your php.ini file.
-	-------------------------------------------------------------------------------------------
-
-JIT_WARNING
-);
+				$logger->warning("PHP JIT is enabled (Experimental)");
 			}
 		}
 	}

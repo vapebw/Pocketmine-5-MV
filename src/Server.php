@@ -317,7 +317,7 @@ class Server{
 	private array $entityEventBroadcasters = [];
 
 	public function getName() : string{
-		return "VesperCustom-PublicVersion";
+		return "Vesper";
 	}
 
 	public function isRunning() : bool{
@@ -854,7 +854,7 @@ class Server{
 			$this->dataPath = realpath($dataPath) . DIRECTORY_SEPARATOR;
 			$this->pluginPath = realpath($pluginPath) . DIRECTORY_SEPARATOR;
 
-			$this->logger->info("Loading server configuration");
+			$this->logger->debug("Loading server configuration");
 			$pocketmineYmlPath = Path::join($this->dataPath, "pocketmine.yml");
 			if(!file_exists($pocketmineYmlPath)){
 				$content = Filesystem::fileGetContents(Path::join(\pocketmine\RESOURCE_PATH, "pocketmine.yml"));
@@ -909,7 +909,7 @@ class Server{
 				}
 			}
 
-			$this->logger->info($this->language->translate(KnownTranslationFactory::language_selected($this->language->getName(), $this->language->getLang())));
+			$this->logger->debug($this->language->translate(KnownTranslationFactory::language_selected($this->language->getName(), $this->language->getLang())));
 
 			if(VersionInfo::IS_DEVELOPMENT_BUILD){
 				if(!$this->configGroup->getPropertyBool(Yml::SETTINGS_ENABLE_DEV_BUILDS, false)){
@@ -932,7 +932,9 @@ class Server{
 
 			$this->memoryManager = new MemoryManager($this);
 
-			$this->logger->info($this->language->translate(KnownTranslationFactory::pocketmine_server_start(TextFormat::AQUA . $this->getVersion() . TextFormat::RESET)));
+			$this->logger->info(TextFormat::GRAY . "> " . TextFormat::WHITE . "Vesper v" . ProtocolInfo::MINECRAFT_VERSION . " | " . TextFormat::GREEN . "Stable Release");
+			$this->logger->info(TextFormat::GRAY . "> " . TextFormat::WHITE . "Developer: " . TextFormat::GOLD . "sxvape (@sxvape, @vapebw)");
+			$this->logger->info(TextFormat::GRAY . "> " . TextFormat::WHITE . "Running optimized PocketMine-MP");
 
 			if(($poolSize = $this->configGroup->getPropertyString(Yml::SETTINGS_ASYNC_WORKERS, "auto")) === "auto"){
 				$poolSize = 2;
