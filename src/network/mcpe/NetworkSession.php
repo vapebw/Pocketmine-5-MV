@@ -1281,7 +1281,71 @@ class NetworkSession{
 						}
 						$overloads[] = new CommandOverload(chaining: $bedrockOverload->isChaining(), parameters: $params);
 					}
-				}else{
+				if($bedrockOverloads === null && $command instanceof \pocketmine\command\VanillaCommand){
+					$vName = strtolower($command->getName());
+					$overloads = match($vName){
+						"gamemode" => [
+							new CommandOverload(chaining: false, parameters: [
+								CommandParameter::enum("gameMode", new CommandHardEnum("gamemodes", ["survival", "creative", "adventure", "spectator", "0", "1", "2", "3"]), 0, false),
+								CommandParameter::standard("player", AvailableCommandsPacket::convertArg($protocolId, AvailableCommandsPacket::ARG_TYPE_TARGET), 0, true)
+							])
+						],
+						"teleport", "tp" => [
+							new CommandOverload(chaining: false, parameters: [
+								CommandParameter::standard("destinationPlayer", AvailableCommandsPacket::convertArg($protocolId, AvailableCommandsPacket::ARG_TYPE_TARGET), 0, false)
+							]),
+							new CommandOverload(chaining: false, parameters: [
+								CommandParameter::standard("destination", AvailableCommandsPacket::convertArg($protocolId, AvailableCommandsPacket::ARG_TYPE_POSITION), 0, false)
+							]),
+							new CommandOverload(chaining: false, parameters: [
+								CommandParameter::standard("victim", AvailableCommandsPacket::convertArg($protocolId, AvailableCommandsPacket::ARG_TYPE_TARGET), 0, false),
+								CommandParameter::standard("destinationPlayer", AvailableCommandsPacket::convertArg($protocolId, AvailableCommandsPacket::ARG_TYPE_TARGET), 0, false)
+							]),
+							new CommandOverload(chaining: false, parameters: [
+								CommandParameter::standard("victim", AvailableCommandsPacket::convertArg($protocolId, AvailableCommandsPacket::ARG_TYPE_TARGET), 0, false),
+								CommandParameter::standard("destination", AvailableCommandsPacket::convertArg($protocolId, AvailableCommandsPacket::ARG_TYPE_POSITION), 0, false)
+							])
+						],
+						"effect" => [
+							new CommandOverload(chaining: false, parameters: [
+								CommandParameter::standard("player", AvailableCommandsPacket::convertArg($protocolId, AvailableCommandsPacket::ARG_TYPE_TARGET), 0, false),
+								CommandParameter::enum("effect", new CommandHardEnum("effects", ["speed", "slowness", "haste", "mining_fatigue", "strength", "instant_health", "instant_damage", "jump_boost", "nausea", "regeneration", "resistance", "fire_resistance", "water_breathing", "invisibility", "blindness", "night_vision", "hunger", "weakness", "poison", "wither", "health_boost", "absorption", "saturation", "levitation", "fatal_poison", "conduit_power"]), 0, false),
+								CommandParameter::standard("seconds", AvailableCommandsPacket::convertArg($protocolId, AvailableCommandsPacket::ARG_TYPE_INT), 0, true),
+								CommandParameter::standard("amplifier", AvailableCommandsPacket::convertArg($protocolId, AvailableCommandsPacket::ARG_TYPE_INT), 0, true),
+								CommandParameter::enum("hideParticles", new CommandHardEnum("boolean", ["true", "false"]), 0, true)
+							]),
+							new CommandOverload(chaining: false, parameters: [
+								CommandParameter::standard("player", AvailableCommandsPacket::convertArg($protocolId, AvailableCommandsPacket::ARG_TYPE_TARGET), 0, false),
+								CommandParameter::enum("clear", new CommandHardEnum("effectClear", ["clear"]), 0, false)
+							])
+						],
+						"give" => [
+							new CommandOverload(chaining: false, parameters: [
+								CommandParameter::standard("player", AvailableCommandsPacket::convertArg($protocolId, AvailableCommandsPacket::ARG_TYPE_TARGET), 0, false),
+								CommandParameter::standard("item", AvailableCommandsPacket::convertArg($protocolId, AvailableCommandsPacket::ARG_TYPE_ITEM_STACK), 0, false),
+								CommandParameter::standard("amount", AvailableCommandsPacket::convertArg($protocolId, AvailableCommandsPacket::ARG_TYPE_INT), 0, true)
+							])
+						],
+						"kill" => [
+							new CommandOverload(chaining: false, parameters: [
+								CommandParameter::standard("target", AvailableCommandsPacket::convertArg($protocolId, AvailableCommandsPacket::ARG_TYPE_TARGET), 0, true)
+							])
+						],
+						"time" => [
+							new CommandOverload(chaining: false, parameters: [
+								CommandParameter::enum("action", new CommandHardEnum("timeAction", ["set", "add", "query"]), 0, false),
+								CommandParameter::standard("value", AvailableCommandsPacket::convertArg($protocolId, AvailableCommandsPacket::ARG_TYPE_INT), 0, false)
+							]),
+							new CommandOverload(chaining: false, parameters: [
+								CommandParameter::enum("action", new CommandHardEnum("timeAction", ["set"]), 0, false),
+								CommandParameter::enum("value", new CommandHardEnum("timeSpec", ["day", "night", "noon", "midnight", "sunrise", "sunset"]), 0, false)
+							])
+						],
+						default => null
+					};
+				}
+
+				if($overloads === null){
 					$subcommandNames = [];
 					$target = $command;
 					
