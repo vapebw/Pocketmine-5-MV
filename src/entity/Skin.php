@@ -31,7 +31,8 @@ use function json_encode;
 use function strlen;
 use const JSON_THROW_ON_ERROR;
 
-final class Skin{
+final class Skin
+{
 	public const ACCEPTED_SKIN_SIZES = [
 		64 * 32 * 4,
 		64 * 64 * 4,
@@ -44,32 +45,34 @@ final class Skin{
 	private string $geometryName;
 	private string $geometryData;
 
-	private static function checkLength(string $string, string $name, int $maxLength) : void{
-		if(strlen($string) > $maxLength){
+	private static function checkLength(string $string, string $name, int $maxLength): void
+	{
+		if (strlen($string) > $maxLength) {
 			throw new InvalidSkinException("$name must be at most $maxLength bytes, but have " . strlen($string) . " bytes");
 		}
 	}
 
-	public function __construct(string $skinId, string $skinData, string $capeData = "", string $geometryName = "", string $geometryData = ""){
+	public function __construct(string $skinId, string $skinData, string $capeData = "", string $geometryName = "", string $geometryData = "")
+	{
 		self::checkLength($skinId, "Skin ID", Limits::INT16_MAX);
 		self::checkLength($geometryName, "Geometry name", Limits::INT16_MAX);
-		self::checkLength($geometryData, "Geometry data", Limits::INT32_MAX);
+		self::checkLength($geometryData, "Geometry data", 512_000);
 
-		if($skinId === ""){
+		if ($skinId === "") {
 			throw new InvalidSkinException("Skin ID must not be empty");
 		}
 		$len = strlen($skinData);
-		if(!in_array($len, self::ACCEPTED_SKIN_SIZES, true)){
+		if (!in_array($len, self::ACCEPTED_SKIN_SIZES, true)) {
 			throw new InvalidSkinException("Invalid skin data size $len bytes (allowed sizes: " . implode(", ", self::ACCEPTED_SKIN_SIZES) . ")");
 		}
-		if($capeData !== "" && strlen($capeData) !== 8192){
+		if ($capeData !== "" && strlen($capeData) !== 8192) {
 			throw new InvalidSkinException("Invalid cape data size " . strlen($capeData) . " bytes (must be exactly 8192 bytes)");
 		}
 
-		if($geometryData !== ""){
-			try{
+		if ($geometryData !== "") {
+			try {
 				$decodedGeometry = (new CommentedJsonDecoder())->decode($geometryData);
-			}catch(\RuntimeException $e){
+			} catch (\RuntimeException $e) {
 				throw new InvalidSkinException("Invalid geometry data: " . $e->getMessage(), 0, $e);
 			}
 
@@ -90,23 +93,29 @@ final class Skin{
 		$this->geometryData = $geometryData;
 	}
 
-	public function getSkinId() : string{
+	public function getSkinId(): string
+	{
 		return $this->skinId;
 	}
 
-	public function getSkinData() : string{
+	public function getSkinData(): string
+	{
 		return $this->skinData;
 	}
 
-	public function getCapeData() : string{
+	public function getCapeData(): string
+	{
 		return $this->capeData;
 	}
 
-	public function getGeometryName() : string{
+	public function getGeometryName(): string
+	{
 		return $this->geometryName;
 	}
 
-	public function getGeometryData() : string{
+	public function getGeometryData(): string
+	{
 		return $this->geometryData;
 	}
 }
+
