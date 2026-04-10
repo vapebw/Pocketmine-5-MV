@@ -36,6 +36,10 @@ class NetworkSessionManager{
 	 */
 	private array $sessions = [];
 
+	/** @var array<int, int> */
+	private array $protocolUsageCount = [];
+
+
 	/**
 	 * @var NetworkSession[]
 	 * @phpstan-var array<int, NetworkSession>
@@ -49,6 +53,9 @@ class NetworkSessionManager{
 		$idx = spl_object_id($session);
 		$this->sessions[$idx] = $session;
 		$this->pendingLoginSessions[$idx] = $session;
+
+		$protocolId = $session->getProtocolId();
+		$this->protocolUsageCount[$protocolId] = ($this->protocolUsageCount[$protocolId] ?? 0) + 1;
 	}
 
 	/**
@@ -66,8 +73,28 @@ class NetworkSessionManager{
 	 */
 	public function remove(NetworkSession $session) : void{
 		$idx = spl_object_id($session);
-		unset($this->sessions[$idx]);
-		unset($this->pendingLoginSessions[$idx]);
+		$protocolId = $session->getProtocolId();
+
+		if(isset($this->sessions[$idx])){
+			unset($this->sessions[$idx]);
+			unset($this->pendingLoginSessions[$idx]);
+
+			if(isset($this->protocolUsageCount[$protocolId])){
+				$this->protocolUsageCount[$protocolId]--;
+				if($this->protocolUsageCount[$protocolId] <= 0){
+					unset($this->protocolUsageCount[$protocolId]);
+					$this->triggerProtocolCleanup($protocolId);
+				}
+			}
+		}
+	}
+
+	private function triggerProtocolCleanup(int $protocolId) : void{
+		\pocketmine\network\mcpe\convert\TypeConverter::removeInstance($protocolId);
+		\pocketmine\network\mcpe\cache\CreativeInventoryCache::removeInstance($protocolId);
+		\pocketmine\network\mcpe\cache\CraftingDataCache::removeInstance($protocolId);
+		\pocketmine\data\bedrock\ItemTagToIdMap::removeInstance($protocolId);
+		\pocketmine\data\bedrock\ItemTagDowngrader::removeInstance($protocolId);
 	}
 
 	/**

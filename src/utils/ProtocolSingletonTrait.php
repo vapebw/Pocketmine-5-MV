@@ -60,6 +60,10 @@ trait ProtocolSingletonTrait{
 		return $this->protocolId;
 	}
 
+	public static function removeInstance(int $protocolId) : void{
+		unset(self::$instance[$protocolId]);
+	}
+
 	/**
 	 * @param \Closure(self): void $listener
 	 */
