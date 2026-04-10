@@ -1226,7 +1226,7 @@ class NetworkSession{
 			$label = $command->getLabel();
 				$description = $command->getDescription();
 				$descStr = $description instanceof Translatable ? $this->player->getLanguage()->translate($description) : $description;
-
+				$overloads = null;
 				$bedrockOverloads = null;
 				$registryKeys = [$label, $loweredLabel, $name, explode(":", $label)[1] ?? $label, explode(":", $name)[1] ?? $name];
 				foreach($registryKeys as $key){
