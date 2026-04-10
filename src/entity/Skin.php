@@ -118,3 +118,4 @@ final class Skin
 		return $this->geometryData;
 	}
 }
+
