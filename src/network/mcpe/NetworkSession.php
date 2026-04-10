@@ -1281,6 +1281,8 @@ class NetworkSession{
 						}
 						$overloads[] = new CommandOverload(chaining: $bedrockOverload->isChaining(), parameters: $params);
 					}
+				}
+
 				if($bedrockOverloads === null && $command instanceof \pocketmine\command\VanillaCommand){
 					$vName = strtolower($command->getName());
 					$overloads = match($vName){
