@@ -856,6 +856,9 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 		if(!$this->isConnected()){
 			return;
 		}
+		if($this->networkSession !== null && $this->networkSession->isAwaitingProtocol975ExplicitClientInitialization() && $this->spawnChunkLoadCount === -1){
+			return;
+		}
 
 		Timings::$playerChunkSend->startTiming();
 
@@ -901,12 +904,20 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 						$this->usedChunks[$index] = UsedChunkStatus::SENT;
 						if($this->spawnChunkLoadCount === -1){
 							$this->spawnEntitiesOnChunk($X, $Z);
-						}elseif($this->spawnChunkLoadCount++ === $this->spawnThreshold){
+							(new PlayerPostChunkSendEvent($this, $X, $Z))->call();
+							return;
+						}
+						if($this->networkSession !== null && $this->networkSession->getProtocolId() === \pocketmine\network\mcpe\protocol\ProtocolInfo::PROTOCOL_1_26_20){
+							$this->logger->warning("Spawn chunk progress chunk=$X,$Z sentCount={$this->spawnChunkLoadCount} threshold={$this->spawnThreshold}");
+						}
+						if($this->shouldSendTerrainReadyNow($X, $Z)){
 							$this->spawnChunkLoadCount = -1;
 
 							$this->spawnEntitiesOnAllChunks();
 
 							$this->getNetworkSession()->notifyTerrainReady();
+						}else{
+							$this->spawnChunkLoadCount++;
 						}
 						(new PlayerPostChunkSendEvent($this, $X, $Z))->call();
 					});
@@ -1084,6 +1095,21 @@ class Player extends Human implements CommandSender, ChunkListener, IPlayer, Nev
 		if(count($this->loadQueue) > 0){
 			$this->requestChunks();
 		}
+	}
+
+	private function shouldSendTerrainReadyNow(int $chunkX, int $chunkZ) : bool{
+		if($this->networkSession !== null && $this->networkSession->getProtocolId() === \pocketmine\network\mcpe\protocol\ProtocolInfo::PROTOCOL_1_26_20){
+			$playerChunkX = $this->location->getFloorX() >> Chunk::COORD_BIT_SIZE;
+			$playerChunkZ = $this->location->getFloorZ() >> Chunk::COORD_BIT_SIZE;
+			$minimumSpawnChunks = min(9, max(1, $this->chunksPerTick * 2));
+			$centerChunkReceived = $this->hasReceivedChunk($playerChunkX, $playerChunkZ);
+			if($centerChunkReceived && $this->spawnChunkLoadCount >= $minimumSpawnChunks){
+				$this->logger->warning("Triggering protocol 975 terrain ready early at chunk=$chunkX,$chunkZ sentCount={$this->spawnChunkLoadCount} minimum={$minimumSpawnChunks} centerChunk={$playerChunkX},{$playerChunkZ}");
+				return true;
+			}
+		}
+
+		return $this->spawnChunkLoadCount === $this->spawnThreshold;
 	}
 
 	public function getDeathPosition() : ?Position{
