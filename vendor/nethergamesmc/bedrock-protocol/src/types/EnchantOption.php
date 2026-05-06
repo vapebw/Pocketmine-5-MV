@@ -75,7 +75,7 @@ final class EnchantOption{
 		}
 	}
 
-	public static function read(ByteBufferReader $in) : self{
+	public static function read(ByteBufferReader $in, int $protocolId = 0) : self{
 		$cost = VarInt::readUnsignedInt($in);
 
 		$slotFlags = LE::readUnsignedInt($in);
@@ -83,19 +83,27 @@ final class EnchantOption{
 		$heldActivatedEnchants = self::readEnchantList($in);
 		$selfActivatedEnchants = self::readEnchantList($in);
 
+		if($protocolId >= 975){
+			VarInt::readUnsignedInt($in);
+		}
+
 		$name = CommonTypes::getString($in);
 		$optionId = CommonTypes::readRecipeNetId($in);
 
 		return new self($cost, $slotFlags, $equipActivatedEnchants, $heldActivatedEnchants, $selfActivatedEnchants, $name, $optionId);
 	}
 
-	public function write(ByteBufferWriter $out) : void{
+	public function write(ByteBufferWriter $out, int $protocolId = 0) : void{
 		VarInt::writeUnsignedInt($out, $this->cost);
 
 		LE::writeUnsignedInt($out, $this->slotFlags);
 		self::writeEnchantList($out, $this->equipActivatedEnchantments);
 		self::writeEnchantList($out, $this->heldActivatedEnchantments);
 		self::writeEnchantList($out, $this->selfActivatedEnchantments);
+
+		if($protocolId >= 975){
+			VarInt::writeUnsignedInt($out, 0);
+		}
 
 		CommonTypes::putString($out, $this->name);
 		CommonTypes::writeRecipeNetId($out, $this->optionId);
