@@ -58,6 +58,7 @@ use pocketmine\network\mcpe\handler\PreSpawnPacketHandler;
 use pocketmine\network\mcpe\handler\ResourcePacksPacketHandler;
 use pocketmine\network\mcpe\handler\SessionStartPacketHandler;
 use pocketmine\network\mcpe\handler\SpawnResponsePacketHandler;
+use pocketmine\network\mcpe\serializer\ChunkSerializer;
 use pocketmine\network\mcpe\command\BedrockCommandRegistry;
 use pocketmine\network\mcpe\command\SoftEnumManager;
 use pocketmine\network\mcpe\protocol\ActorEventPacket;
@@ -66,21 +67,30 @@ use pocketmine\network\mcpe\protocol\AvailableCommandsPacket;
 use pocketmine\network\mcpe\protocol\ChunkRadiusUpdatedPacket;
 use pocketmine\network\mcpe\protocol\ClientboundCloseFormPacket;
 use pocketmine\network\mcpe\protocol\ClientboundPacket;
+use pocketmine\network\mcpe\protocol\CraftingDataPacket;
+use pocketmine\network\mcpe\protocol\CreativeContentPacket;
 use pocketmine\network\mcpe\protocol\DisconnectPacket;
+use pocketmine\network\mcpe\protocol\InventoryContentPacket;
+use pocketmine\network\mcpe\protocol\InventorySlotPacket;
 use pocketmine\network\mcpe\protocol\InventoryTransactionPacket;
 use pocketmine\network\mcpe\protocol\LevelSoundEventPacket;
+use pocketmine\network\mcpe\protocol\LevelChunkPacket;
 use pocketmine\network\mcpe\protocol\ModalFormRequestPacket;
+use pocketmine\network\mcpe\protocol\MobEffectPacket;
 use pocketmine\network\mcpe\protocol\MovePlayerPacket;
 use pocketmine\network\mcpe\protocol\NetworkChunkPublisherUpdatePacket;
+use pocketmine\network\mcpe\protocol\NetworkStackLatencyPacket;
 use pocketmine\network\mcpe\protocol\OpenSignPacket;
 use pocketmine\network\mcpe\protocol\Packet;
 use pocketmine\network\mcpe\protocol\PacketDecodeException;
 use pocketmine\network\mcpe\protocol\PacketPool;
 use pocketmine\network\mcpe\protocol\PlayerAuthInputPacket;
+use pocketmine\network\mcpe\protocol\PlayerEnchantOptionsPacket;
 use pocketmine\network\mcpe\protocol\PlayerListPacket;
 use pocketmine\network\mcpe\protocol\PlayerStartItemCooldownPacket;
 use pocketmine\network\mcpe\protocol\PlayStatusPacket;
 use pocketmine\network\mcpe\protocol\ProtocolInfo;
+use pocketmine\network\mcpe\protocol\SetActorDataPacket;
 use pocketmine\network\mcpe\protocol\serializer\AvailableCommandsPacketAssembler;
 use pocketmine\network\mcpe\protocol\serializer\PacketBatch;
 use pocketmine\network\mcpe\protocol\ServerboundPacket;
@@ -97,11 +107,17 @@ use pocketmine\network\mcpe\protocol\TransferPacket;
 use pocketmine\network\mcpe\protocol\types\AbilitiesData;
 use pocketmine\network\mcpe\protocol\types\AbilitiesLayer;
 use pocketmine\network\mcpe\protocol\types\BlockPosition;
+use pocketmine\network\mcpe\protocol\types\ChunkPosition;
 use pocketmine\network\mcpe\protocol\types\command\CommandData;
 use pocketmine\network\mcpe\protocol\types\command\CommandHardEnum;
 use pocketmine\network\mcpe\protocol\types\command\CommandOverload;
 use pocketmine\network\mcpe\protocol\types\command\CommandParameter;
 use pocketmine\network\mcpe\protocol\types\command\CommandPermissions;
+use pocketmine\network\mcpe\protocol\types\command\raw\CommandEnumConstraintRawData;
+use pocketmine\network\mcpe\protocol\types\command\raw\CommandEnumRawData;
+use pocketmine\network\mcpe\protocol\types\command\raw\CommandOverloadRawData;
+use pocketmine\network\mcpe\protocol\types\command\raw\CommandParameterRawData;
+use pocketmine\network\mcpe\protocol\types\command\raw\CommandRawData;
 use pocketmine\network\mcpe\protocol\types\CompressionAlgorithm;
 use pocketmine\network\mcpe\protocol\types\DimensionIds;
 use pocketmine\network\mcpe\protocol\types\PlayerListEntry;
@@ -139,6 +155,7 @@ use function implode;
 use function in_array;
 use function is_string;
 use function json_encode;
+use function microtime;
 use function ord;
 use function random_bytes;
 use function str_split;
@@ -158,6 +175,7 @@ class NetworkSession{
 	private const INCOMING_GAME_PACKETS_BUFFER_TICKS = 100;
 
 	private const INCOMING_PACKET_BATCH_HARD_LIMIT = 300;
+	private const OUTBOUND_PACKET_HISTORY_LIMIT = 20;
 
 	private PacketRateLimiter $packetBatchLimiter;
 	private PacketRateLimiter $gamePacketLimiter;
@@ -212,6 +230,21 @@ class NetworkSession{
 
 	private string $noisyPacketBuffer = "";
 	private int $noisyPacketsDropped = 0;
+	/**
+	 * @var array<int, array{timestamp: float, player: string, protocol: int, packet: string, packetId: int, size: int, translator: ?string, status: string}>
+	 */
+	private array $outboundPacketHistory = [];
+	/** @var array{timestamp: float, player: string, protocol: int, packet: string, packetId: int, size: int, translator: ?string, status: string}|null */
+	private ?array $lastOutboundPacketLog = null;
+	private bool $waitingForClientInitialization = false;
+	/** @phpstan-var list<array{ClientboundPacket, bool, PromiseResolver<true>|null}> */
+	private array $deferredClientInitializationPackets = [];
+	private ?Protocol975SpawnGate $protocol975SpawnGate = null;
+	private int $pendingInitialSpawnChunks = 0;
+	private int $sentInitialSpawnChunks = 0;
+	private bool $protocol975ExplicitClientInitialization = false;
+	private bool $protocol975PreSpawnRadiusSent = false;
+	private bool $protocol975PreSpawnPublisherSent = false;
 
 	public function __construct(
 		private Server $server,
@@ -385,6 +418,7 @@ class NetworkSession{
 
 	public function setProtocolId(int $protocolId) : void{
 		$this->protocolId = $protocolId;
+		$this->protocol975SpawnGate = $protocolId === ProtocolInfo::PROTOCOL_1_26_20 ? new Protocol975SpawnGate() : null;
 
 		$this->typeConverter = TypeConverter::getInstance($protocolId);
 		$this->broadcaster = $this->server->getPacketBroadcaster($protocolId);
@@ -592,6 +626,16 @@ class NetworkSession{
 		if(!$this->loggedIn && !$packet->canBeSentBeforeLogin()){
 			throw new \InvalidArgumentException("Attempted to send " . get_class($packet) . " to " . $this->getDisplayName() . " too early");
 		}
+		if($this->shouldDeferPacketUntilClientInitialization($packet)){
+			$this->deferredClientInitializationPackets[] = [$packet, $immediate, $ackReceiptResolver];
+			$this->logger->debug("Deferring " . $packet->getName() . " until client initialization completes");
+			return true;
+		}
+		if($this->shouldDeferPacketUntilExplicitClientInitialization($packet)){
+			$this->deferredClientInitializationPackets[] = [$packet, $immediate, $ackReceiptResolver];
+			$this->logger->debug("Deferring " . $packet->getName() . " until explicit protocol 975 client initialization completes");
+			return true;
+		}
 
 		$timings = Timings::getSendDataPacketTimings($packet);
 		$timings->startTiming();
@@ -613,10 +657,27 @@ class NetworkSession{
 			$writer = new ByteBufferWriter();
 			foreach($packets as $evPacket){
 				$writer->clear(); //memory reuse let's gooooo
-				$this->addToSendBuffer(self::encodePacketTimed($writer, $this->getProtocolId(), $evPacket));
+				$protocolId = $this->getProtocolId();
+				$buffer = self::encodePacketTimed($writer, $protocolId, $evPacket);
+				if(!$this->validateAndTraceOutboundPacket($evPacket, $buffer, $protocolId)){
+					continue;
+				}
+				$this->addToSendBuffer($buffer);
 			}
 			if($immediate || $packet instanceof AnimatePacket || $packet instanceof ActorEventPacket || $packet instanceof SetActorMotionPacket || $packet instanceof InventoryTransactionPacket || $packet instanceof MovePlayerPacket || $packet instanceof PlayerAuthInputPacket){
 				$this->flushGamePacketQueue();
+			}
+
+			if($this->isProtocol975()){
+				$gate = $this->protocol975SpawnGate ??= new Protocol975SpawnGate();
+				if($gate->isBlockingOptionalPackets()){
+					if($packet instanceof PlayStatusPacket && $packet->status === PlayStatusPacket::PLAYER_SPAWN){
+						if($this->sentInitialSpawnChunks < $this->pendingInitialSpawnChunks){
+							$this->logger->error("FAILED LOUDLY: Tried to send PLAYER_SPAWN with pending initial chunks! Sent: {$this->sentInitialSpawnChunks}, Pending: {$this->pendingInitialSpawnChunks}");
+							throw new \RuntimeException("Protocol 975 state violation: PLAYER_SPAWN before chunks finished");
+						}
+					}
+				}
 			}
 
 			return true;
@@ -664,6 +725,430 @@ class NetworkSession{
 		$this->sendBuffer[] = $buffer;
 	}
 
+	private function validateAndTraceOutboundPacket(ClientboundPacket $packet, string $buffer, int $protocolId) : bool{
+		$translator = $this->getOutboundPacketTranslator($packet);
+		$logEntry = [
+			"timestamp" => microtime(true),
+			"player" => $this->getDisplayName(),
+			"protocol" => $protocolId,
+			"packet" => $packet->getName(),
+			"packetId" => $packet->pid(),
+			"size" => strlen($buffer),
+			"translator" => $translator,
+			"status" => "encoded"
+		];
+
+		if($this->shouldTraceOutboundPackets($protocolId)){
+			$this->logger->debug("Outbound packet ts={$logEntry['timestamp']} player={$logEntry['player']} protocol={$protocolId} packet={$logEntry['packet']} id={$logEntry['packetId']} size={$logEntry['size']} translator=" . ($translator ?? "none"));
+		}
+
+		try{
+			if($this->shouldStrictlyValidateOutboundPacket($protocolId, $packet)){
+				$this->strictlyValidateOutboundPacket($buffer, $protocolId);
+			}
+			$logEntry["status"] = "validated";
+			$this->recordOutboundPacketLog($logEntry);
+			return true;
+		}catch(\Throwable $e){
+			$logEntry["status"] = "blocked";
+			$this->recordOutboundPacketLog($logEntry);
+			$this->logger->warning("Blocked outbound {$logEntry['packet']} for protocol {$protocolId}: " . $e->getMessage());
+			return false;
+		}
+	}
+
+	private function shouldTraceOutboundPackets(int $protocolId) : bool{
+		return $protocolId === ProtocolInfo::PROTOCOL_1_26_20 && $this->loggedIn;
+	}
+
+	private function isProtocol975() : bool{
+		return $this->getProtocolId() === ProtocolInfo::PROTOCOL_1_26_20;
+	}
+
+	private function isProtocol975PreSpawn() : bool{
+		return $this->isProtocol975() && $this->player !== null && !$this->player->spawned;
+	}
+
+	private function shouldDeferPacketUntilClientInitialization(ClientboundPacket $packet) : bool{
+		if(!$this->waitingForClientInitialization || $this->getProtocolId() !== ProtocolInfo::PROTOCOL_1_26_20){
+			return false;
+		}
+
+		return !($packet instanceof DisconnectPacket || $packet instanceof TransferPacket || $packet instanceof PlayStatusPacket);
+	}
+
+	private function shouldDeferPacketUntilExplicitClientInitialization(ClientboundPacket $packet) : bool{
+		if(!$this->isProtocol975() || $this->protocol975ExplicitClientInitialization){
+			return false;
+		}
+
+		if($packet instanceof NetworkSettingsPacket ||
+			$packet instanceof ServerToClientHandshakePacket ||
+			$packet instanceof ResourcePacksInfoPacket ||
+			$packet instanceof ResourcePackStackPacket ||
+			$packet instanceof PlayStatusPacket ||
+			$packet instanceof StartGamePacket ||
+			$packet instanceof ItemRegistryPacket ||
+			$packet instanceof AvailableActorIdentifiersPacket ||
+			$packet instanceof BiomeDefinitionListPacket ||
+			$packet instanceof LevelChunkPacket ||
+			$packet instanceof NetworkStackLatencyPacket ||
+			$packet instanceof ChunkRadiusUpdatedPacket ||
+			$packet instanceof NetworkChunkPublisherUpdatePacket ||
+			$packet instanceof DisconnectPacket ||
+			$packet instanceof TransferPacket
+		){
+			return false;
+		}
+
+		return true;
+	}
+
+
+
+	private function flushDeferredClientInitializationPackets() : void{
+		if(count($this->deferredClientInitializationPackets) === 0){
+			return;
+		}
+
+		$queuedPackets = $this->deferredClientInitializationPackets;
+		$this->deferredClientInitializationPackets = [];
+		$remainingPackets = [];
+		$this->logger->debug("Flushing " . count($queuedPackets) . " deferred post-spawn packets");
+		foreach($queuedPackets as [$packet, $immediate, $ackReceiptResolver]){
+			if($this->shouldDeferPacketUntilExplicitClientInitialization($packet)){
+				$remainingPackets[] = [$packet, $immediate, $ackReceiptResolver];
+				continue;
+			}
+			if(!$this->connected){
+				break;
+			}
+			$this->sendDataPacketInternal($packet, $immediate, $ackReceiptResolver);
+		}
+		if(count($remainingPackets) > 0){
+			array_unshift($this->deferredClientInitializationPackets, ...$remainingPackets);
+		}
+	}
+
+	private function shouldStrictlyValidateOutboundPacket(int $protocolId, ClientboundPacket $packet) : bool{
+		if($protocolId !== ProtocolInfo::PROTOCOL_1_26_20){
+			return false;
+		}
+		return $packet instanceof AvailableCommandsPacket ||
+			$packet instanceof CreativeContentPacket ||
+			$packet instanceof UpdateAbilitiesPacket ||
+			$packet instanceof InventoryContentPacket ||
+			$packet instanceof InventorySlotPacket ||
+			$packet instanceof CraftingDataPacket ||
+			$packet instanceof PlayerListPacket ||
+			$packet instanceof SetActorDataPacket ||
+			$packet instanceof MobEffectPacket ||
+			$packet instanceof PlayerEnchantOptionsPacket;
+	}
+
+	private function strictlyValidateOutboundPacket(string $buffer, int $protocolId) : void{
+		$decoded = $this->packetPool->getPacket($buffer);
+		if($decoded === null){
+			throw new \RuntimeException("Unable to resolve encoded packet from outbound buffer");
+		}
+		if(!($decoded instanceof ClientboundPacket)){
+			throw new \RuntimeException("Resolved outbound packet " . $decoded->getName() . " is not clientbound");
+		}
+
+		$reader = new ByteBufferReader($buffer);
+		$decoded->decode($reader, $protocolId);
+		if($reader->getUnreadLength() !== 0){
+			$remains = substr($reader->getData(), $reader->getOffset());
+			throw new \RuntimeException("Unread bytes after decoding " . $decoded->getName() . ": " . strlen($remains) . " bytes, tail=" . bin2hex($remains));
+		}
+
+		if($decoded instanceof AvailableCommandsPacket){
+			$this->validateAvailableCommandsPacket($decoded);
+		}elseif($decoded instanceof CreativeContentPacket){
+			$this->validateCreativeContentPacket($decoded);
+		}elseif($decoded instanceof InventoryContentPacket){
+			$this->validateInventoryContentPacket($decoded);
+		}elseif($decoded instanceof InventorySlotPacket){
+			$this->validateInventorySlotPacket($decoded);
+		}elseif($decoded instanceof PlayerListPacket){
+			$this->validatePlayerListPacket($decoded);
+		}elseif($decoded instanceof SetActorDataPacket){
+			$this->validateSetActorDataPacket($decoded);
+		}elseif($decoded instanceof MobEffectPacket){
+			$this->validateMobEffectPacket($decoded);
+		}elseif($decoded instanceof PlayerEnchantOptionsPacket){
+			$this->validatePlayerEnchantOptionsPacket($decoded);
+		}elseif($decoded instanceof CraftingDataPacket){
+			$this->validateCraftingDataPacket($decoded);
+		}
+	}
+
+	private function validateAvailableCommandsPacket(AvailableCommandsPacket $packet) : void{
+		$enumValueCount = count($packet->enumValues);
+		foreach($packet->enums as $enumIndex => $enum){
+			\assert($enum instanceof CommandEnumRawData);
+			foreach($enum->getValueIndexes() as $valueIndex){
+				if($valueIndex < 0 || $valueIndex >= $enumValueCount){
+					throw new \RuntimeException("AvailableCommands enum #$enumIndex has invalid enum value index $valueIndex");
+				}
+			}
+		}
+
+		foreach($packet->chainedSubCommandData as $chainIndex => $chain){
+			foreach($chain->getValueData() as $valueIndex => $valueData){
+				if($valueData->getNameIndex() < 0 || $valueData->getNameIndex() >= count($packet->chainedSubCommandValues)){
+					throw new \RuntimeException("AvailableCommands chained subcommand #$chainIndex value #$valueIndex has invalid name index " . $valueData->getNameIndex());
+				}
+			}
+		}
+
+		foreach($packet->commandData as $commandIndex => $command){
+			\assert($command instanceof CommandRawData);
+			$aliasIndex = $command->getAliasEnumIndex();
+			if($aliasIndex !== -1 && ($aliasIndex < 0 || $aliasIndex >= count($packet->enums))){
+				throw new \RuntimeException("AvailableCommands command #$commandIndex has invalid alias enum index $aliasIndex");
+			}
+			foreach($command->getChainedSubCommandDataIndexes() as $offsetIndex){
+				if($offsetIndex < 0 || $offsetIndex >= count($packet->chainedSubCommandData)){
+					throw new \RuntimeException("AvailableCommands command #$commandIndex has invalid chained subcommand offset $offsetIndex");
+				}
+			}
+			foreach($command->getOverloads() as $overloadIndex => $overload){
+				\assert($overload instanceof CommandOverloadRawData);
+				foreach($overload->getParameters() as $parameterIndex => $parameter){
+					\assert($parameter instanceof CommandParameterRawData);
+					$this->validateAvailableCommandsParameter($packet, $parameter, $commandIndex, $overloadIndex, $parameterIndex);
+				}
+			}
+		}
+
+		foreach($packet->enumConstraints as $constraintIndex => $constraint){
+			\assert($constraint instanceof CommandEnumConstraintRawData);
+			if($constraint->getAffectedValueIndex() < 0 || $constraint->getAffectedValueIndex() >= $enumValueCount){
+				throw new \RuntimeException("AvailableCommands constraint #$constraintIndex has invalid affected value index " . $constraint->getAffectedValueIndex());
+			}
+			if($constraint->getEnumIndex() < 0 || $constraint->getEnumIndex() >= count($packet->enums)){
+				throw new \RuntimeException("AvailableCommands constraint #$constraintIndex has invalid enum index " . $constraint->getEnumIndex());
+			}
+		}
+	}
+
+	private function validateAvailableCommandsParameter(AvailableCommandsPacket $packet, CommandParameterRawData $parameter, int $commandIndex, int $overloadIndex, int $parameterIndex) : void{
+		$typeInfo = $parameter->getTypeInfo();
+		$location = "command #$commandIndex overload #$overloadIndex parameter #$parameterIndex";
+		if(($typeInfo & AvailableCommandsPacket::ARG_FLAG_SOFT_ENUM) !== 0){
+			$softEnumIndex = ($typeInfo & ~(AvailableCommandsPacket::ARG_FLAG_SOFT_ENUM | AvailableCommandsPacket::ARG_FLAG_VALID));
+			if($softEnumIndex < 0 || $softEnumIndex >= count($packet->softEnums)){
+				throw new \RuntimeException("AvailableCommands $location has invalid soft enum index $softEnumIndex");
+			}
+			return;
+		}
+		if(($typeInfo & AvailableCommandsPacket::ARG_FLAG_ENUM) !== 0){
+			$enumIndex = ($typeInfo & ~(AvailableCommandsPacket::ARG_FLAG_ENUM | AvailableCommandsPacket::ARG_FLAG_VALID));
+			if($enumIndex < 0 || $enumIndex >= count($packet->enums)){
+				throw new \RuntimeException("AvailableCommands $location has invalid hard enum index $enumIndex");
+			}
+			return;
+		}
+		if(($typeInfo & AvailableCommandsPacket::ARG_FLAG_POSTFIX) !== 0){
+			$postfixIndex = ($typeInfo & ~AvailableCommandsPacket::ARG_FLAG_POSTFIX);
+			if($postfixIndex < 0 || $postfixIndex >= count($packet->postfixes)){
+				throw new \RuntimeException("AvailableCommands $location has invalid postfix index $postfixIndex");
+			}
+		}
+	}
+
+	private function validateCreativeContentPacket(CreativeContentPacket $packet) : void{
+		foreach($packet->getGroups() as $groupIndex => $group){
+			$categoryId = $group->getCategoryId();
+			if(!in_array($categoryId, [
+				CreativeContentPacket::CATEGORY_CONSTRUCTION,
+				CreativeContentPacket::CATEGORY_NATURE,
+				CreativeContentPacket::CATEGORY_EQUIPMENT,
+				CreativeContentPacket::CATEGORY_ITEMS
+			], true)){
+				throw new \RuntimeException("CreativeContent group #$groupIndex has invalid category ID $categoryId");
+			}
+		}
+
+		$groupCount = count($packet->getGroups());
+		foreach($packet->getItems() as $itemIndex => $item){
+			$groupId = $item->getGroupId();
+			if($groupId < 0 || $groupId >= $groupCount){
+				throw new \RuntimeException("CreativeContent item #$itemIndex has invalid group ID $groupId for $groupCount groups");
+			}
+		}
+	}
+
+	private function validateInventoryContentPacket(InventoryContentPacket $packet) : void{
+		if($packet->windowId < 0){
+			throw new \RuntimeException("InventoryContent has invalid window ID {$packet->windowId}");
+		}
+		if($packet->containerName->getContainerId() < 0){
+			throw new \RuntimeException("InventoryContent has invalid container ID " . $packet->containerName->getContainerId());
+		}
+		foreach($packet->items as $itemIndex => $item){
+			if($item->getStackId() < 0){
+				throw new \RuntimeException("InventoryContent item #$itemIndex has invalid stack ID " . $item->getStackId());
+			}
+		}
+	}
+
+	private function validateInventorySlotPacket(InventorySlotPacket $packet) : void{
+		if($packet->windowId < 0){
+			throw new \RuntimeException("InventorySlot has invalid window ID {$packet->windowId}");
+		}
+		if($packet->inventorySlot < 0){
+			throw new \RuntimeException("InventorySlot has invalid slot {$packet->inventorySlot}");
+		}
+		if($packet->item->getStackId() < 0){
+			throw new \RuntimeException("InventorySlot has invalid item stack ID " . $packet->item->getStackId());
+		}
+	}
+
+	private function validatePlayerListPacket(PlayerListPacket $packet) : void{
+		$seen = [];
+		foreach($packet->entries as $entryIndex => $entry){
+			$key = $entry->uuid->toString();
+			if(isset($seen[$key])){
+				throw new \RuntimeException("PlayerList duplicate UUID at entry #$entryIndex");
+			}
+			$seen[$key] = true;
+		}
+	}
+
+	private function validateSetActorDataPacket(SetActorDataPacket $packet) : void{
+		if($packet->actorRuntimeId < 0){
+			throw new \RuntimeException("SetActorData has invalid actor runtime ID {$packet->actorRuntimeId}");
+		}
+		foreach($packet->metadata as $key => $property){
+			if($key < 0){
+				throw new \RuntimeException("SetActorData has invalid metadata key $key");
+			}
+			if($property->getTypeId() < 0){
+				throw new \RuntimeException("SetActorData key $key has invalid metadata type " . $property->getTypeId());
+			}
+		}
+	}
+
+	private function validateMobEffectPacket(MobEffectPacket $packet) : void{
+		if(!in_array($packet->eventId, [MobEffectPacket::EVENT_ADD, MobEffectPacket::EVENT_MODIFY, MobEffectPacket::EVENT_REMOVE], true)){
+			throw new \RuntimeException("MobEffect has invalid event ID {$packet->eventId}");
+		}
+		if($packet->effectId < 0){
+			throw new \RuntimeException("MobEffect has invalid effect ID {$packet->effectId}");
+		}
+	}
+
+	private function validatePlayerEnchantOptionsPacket(PlayerEnchantOptionsPacket $packet) : void{
+		foreach($packet->getOptions() as $optionIndex => $option){
+			if($option->getCost() < 0){
+				throw new \RuntimeException("PlayerEnchantOptions option #$optionIndex has invalid cost " . $option->getCost());
+			}
+			if($option->getOptionId() < 0){
+				throw new \RuntimeException("PlayerEnchantOptions option #$optionIndex has invalid option ID " . $option->getOptionId());
+			}
+		}
+	}
+
+	private function validateCraftingDataPacket(CraftingDataPacket $packet) : void{
+		if(count($packet->recipesWithTypeIds) === 0 && count($packet->potionTypeRecipes) === 0 && count($packet->potionContainerRecipes) === 0 && count($packet->materialReducerRecipes) === 0){
+			throw new \RuntimeException("CraftingData is empty");
+		}
+	}
+
+	private function getOutboundPacketTranslator(ClientboundPacket $packet) : ?string{
+		return match(true){
+			$packet instanceof AvailableCommandsPacket => AvailableCommandsPacketAssembler::class,
+			$packet instanceof CreativeContentPacket => TypeConverter::class,
+			default => null
+		};
+	}
+
+	/**
+	 * @param array{timestamp: float, player: string, protocol: int, packet: string, packetId: int, size: int, translator: ?string, status: string} $logEntry
+	 */
+	private function recordOutboundPacketLog(array $logEntry) : void{
+		$this->lastOutboundPacketLog = $logEntry;
+		$this->outboundPacketHistory[] = $logEntry;
+		if(count($this->outboundPacketHistory) > self::OUTBOUND_PACKET_HISTORY_LIMIT){
+			array_shift($this->outboundPacketHistory);
+		}
+	}
+
+	private function logOutboundPacketHistory(string $reason) : void{
+		if($this->lastOutboundPacketLog !== null){
+			$this->logger->warning("Last outbound packet before disconnect \"$reason\": ts={$this->lastOutboundPacketLog['timestamp']} protocol={$this->lastOutboundPacketLog['protocol']} packet={$this->lastOutboundPacketLog['packet']} id={$this->lastOutboundPacketLog['packetId']} size={$this->lastOutboundPacketLog['size']} translator=" . ($this->lastOutboundPacketLog['translator'] ?? "none") . " status={$this->lastOutboundPacketLog['status']}");
+		}
+		if(count($this->outboundPacketHistory) > 0){
+			$history = [];
+			foreach($this->outboundPacketHistory as $entry){
+				$history[] = "{$entry['timestamp']} {$entry['packet']}#{$entry['packetId']} size={$entry['size']} status={$entry['status']}";
+			}
+			$this->logger->warning("Recent outbound packet history: " . implode(" | ", $history));
+		}
+	}
+
+	private function validateAndTraceCompressedBatch(string $payload, int $protocolId, string $context) : void{
+		if($protocolId !== ProtocolInfo::PROTOCOL_1_26_20){
+			return;
+		}
+
+		try{
+			$batchPayload = $payload;
+			if($protocolId >= ProtocolInfo::PROTOCOL_1_20_60){
+				$compressionType = ord($payload[0] ?? "\x00");
+				$compressed = substr($payload, 1);
+				if($compressionType === CompressionAlgorithm::NONE){
+					$batchPayload = $compressed;
+				}elseif($compressionType === $this->compressor->getNetworkId()){
+					$batchPayload = $this->compressor->decompress($compressed);
+				}else{
+					throw new \RuntimeException("Unexpected compression type $compressionType");
+				}
+			}else{
+				$batchPayload = $this->compressor->decompress($payload);
+			}
+
+			$stream = new ByteBufferReader($batchPayload);
+			foreach(PacketBatch::decodeRaw($stream) as $buffer){
+				$packet = $this->packetPool->getPacket($buffer);
+				if($packet === null){
+					throw new \RuntimeException("Unknown packet inside compressed $context batch");
+				}
+				if(!($packet instanceof ClientboundPacket)){
+					throw new \RuntimeException("Non-clientbound packet " . $packet->getName() . " inside compressed $context batch");
+				}
+
+				$packetStream = new ByteBufferReader($buffer);
+				$packet->decode($packetStream, $protocolId);
+				if($packetStream->getUnreadLength() !== 0){
+					$remains = substr($packetStream->getData(), $packetStream->getOffset());
+					throw new \RuntimeException("Unread bytes after decoding " . $packet->getName() . " in compressed $context batch: " . strlen($remains) . " bytes, tail=" . bin2hex($remains));
+				}
+
+				if($packet instanceof LevelChunkPacket){
+					$pos = $packet->getChunkPosition();
+					$this->recordOutboundPacketLog([
+						"timestamp" => microtime(true),
+						"player" => $this->getDisplayName(),
+						"protocol" => $protocolId,
+						"packet" => $packet->getName(),
+						"packetId" => $packet->pid(),
+						"size" => strlen($buffer),
+						"translator" => null,
+						"status" => "validated-batch"
+					]);
+					$this->logger->debug("Compressed $context batch packet=LevelChunkPacket chunkX={$pos->getX()} chunkZ={$pos->getZ()} dim={$packet->getDimensionId()} subCount={$packet->getSubChunkCount()} payload=" . strlen($packet->getExtraPayload()) . " cache=" . ($packet->isCacheEnabled() ? "on" : "off"));
+				}else{
+					$this->logger->debug("Compressed $context batch packet={$packet->getName()} id={$packet->pid()} size=" . strlen($buffer));
+				}
+			}
+		}catch(\Throwable $e){
+			$this->logger->warning("Compressed $context batch validation failed for protocol $protocolId: " . $e->getMessage());
+		}
+	}
+
 	private function flushGamePacketQueue() : void{
 		if(count($this->sendBuffer) > 0){
 			Timings::$playerNetworkSend->startTiming();
@@ -709,6 +1194,12 @@ class NetworkSession{
 			//if the next packet causes a flush, avoid unnecessarily flushing twice
 			//however, if the next packet does *not* cause a flush, game packets should be flushed to avoid delays
 			$this->flushGamePacketQueue();
+			if($this->isProtocol975() && $this->protocol975SpawnGate !== null){
+				if($this->protocol975SpawnGate->getState() === Protocol975SpawnGate::STATE_SENDING_CHUNKS){
+					$this->sentInitialSpawnChunks++;
+					$this->logger->warning("975 Loading: Chunk sent ({$this->sentInitialSpawnChunks}/{$this->pendingInitialSpawnChunks})");
+				}
+			}
 			$this->queueCompressedNoGamePacketFlush($payload, $immediate);
 		}finally{
 			Timings::$playerNetworkSend->stopTiming();
@@ -815,7 +1306,15 @@ class NetworkSession{
 			foreach($sendBufferAckPromises as $resolver){
 				$resolver->reject();
 			}
+			$deferredClientInitializationPackets = $this->deferredClientInitializationPackets;
+			$this->deferredClientInitializationPackets = [];
+			foreach($deferredClientInitializationPackets as [$packet, $immediate, $resolver]){
+				if($resolver !== null){
+					$resolver->reject();
+				}
+			}
 
+			$this->logOutboundPacketHistory($reason instanceof Translatable ? $this->server->getLanguage()->translate($reason) : $reason);
 			$this->logger->info($this->server->getLanguage()->translate(KnownTranslationFactory::pocketmine_network_session_close($reason)));
 		}
 	}
@@ -1036,17 +1535,91 @@ class NetworkSession{
 	}
 
 	public function notifyTerrainReady() : void{
-		$this->logger->debug("Sending spawn notification, waiting for spawn response");
-		$this->sendDataPacket(PlayStatusPacket::create(PlayStatusPacket::PLAYER_SPAWN));
-		$this->setHandler(new SpawnResponsePacketHandler($this->onClientSpawnResponse(...)));
+		if($this->isProtocol975()){
+			$gate = $this->protocol975SpawnGate ??= new Protocol975SpawnGate();
+			$this->logger->warning("975 Loading: Terrain ready. Sent: {$this->sentInitialSpawnChunks}, Pending: {$this->pendingInitialSpawnChunks}");
+			if($this->sentInitialSpawnChunks >= $this->pendingInitialSpawnChunks){
+				$this->flushGamePacketQueue();
+				$timestamp = (int) (microtime(true) * 1000000);
+				$this->logger->warning("975 Loading: Sending barrier request ts={$timestamp}");
+				$this->sendDataPacket($gate->beginBarrierLatencyHandshake($timestamp), true);
+			}
+			return;
+		}
+		$this->sendPlayerSpawnNotification();
 	}
 
 	private function onClientSpawnResponse() : void{
 		$this->logger->debug("Received spawn response, entering in-game phase");
+		$this->waitingForClientInitialization = false;
+		$this->protocol975SpawnGate?->markClientInitialized();
+		$this->protocol975PreSpawnRadiusSent = false;
+		$this->protocol975PreSpawnPublisherSent = false;
 		$this->player->setNoClientPredictions(false); //TODO: HACK: we set this during the spawn sequence to prevent the client sending junk movements
+		$this->flushDeferredClientInitializationPackets();
+		$this->setHandler(new InGamePacketHandler($this->player, $this, $this->invManager));
 		$this->player->doFirstSpawn();
 		$this->forceAsyncCompression = false;
-		$this->setHandler(new InGamePacketHandler($this->player, $this, $this->invManager));
+	}
+
+	private function onExplicitClientInitialization() : void{
+		$this->protocol975ExplicitClientInitialization = true;
+		$this->onClientSpawnResponse();
+	}
+
+	private function sendPlayerSpawnNotification() : void{
+		if($this->isProtocol975()){
+			$gate = $this->protocol975SpawnGate ??= new Protocol975SpawnGate();
+			if(!$gate->canSendPlayerSpawn()){
+				$this->logger->error("FAILED LOUDLY: Tried to send PLAYER_SPAWN before barrier acked! State: {$gate->getState()}");
+				throw new \RuntimeException("Protocol 975 state violation: PLAYER_SPAWN before barrier");
+			}
+			$this->protocol975ExplicitClientInitialization = false;
+			$gate->markPlayerSpawnSent();
+			$this->logger->warning("975 Loading: Sending PLAYER_SPAWN");
+		}
+		if($this->isProtocol975()){
+			$this->logger->warning("Sending spawn notification, waiting for spawn response");
+		}else{
+			$this->logger->debug("Sending spawn notification, waiting for spawn response");
+		}
+		$this->waitingForClientInitialization = $this->isProtocol975();
+		$this->sendDataPacket(PlayStatusPacket::create(PlayStatusPacket::PLAYER_SPAWN));
+		$this->setHandler(new SpawnResponsePacketHandler($this, $this->onExplicitClientInitialization(...)));
+	}
+
+	public function handlePreSpawnNetworkStackLatency(NetworkStackLatencyPacket $packet) : bool{
+		if($this->isProtocol975() && $this->protocol975SpawnGate !== null){
+			if($this->protocol975SpawnGate->acceptBarrierResponse($packet)){
+				$this->logger->warning("975 Loading: Barrier acked ts={$packet->timestamp}");
+				$this->sendPlayerSpawnNotification();
+				return true;
+			}
+		}
+		return true;
+	}
+
+	public function handlePreSpawnLoadingScreen() : bool{
+		return true;
+	}
+
+	public function handlePreSpawnClientOptions() : bool{
+		return true;
+	}
+
+	public function handleExplicitClientInitializationSignal() : bool{
+		if($this->isProtocol975() && !$this->protocol975ExplicitClientInitialization){
+			$this->onExplicitClientInitialization();
+		}
+		return true;
+	}
+
+	private function shouldSuppressTextPacketsForProtocol975() : bool{
+		return $this->isProtocol975() && !$this->protocol975ExplicitClientInitialization;
+	}
+
+	public function isAwaitingProtocol975ExplicitClientInitialization() : bool{
+		return $this->isProtocol975() && $this->waitingForClientInitialization && !$this->protocol975ExplicitClientInitialization;
 	}
 
 	public function onServerDeath(Translatable|string $deathMessage) : void{
@@ -1089,10 +1662,24 @@ class NetworkSession{
 	}
 
 	public function syncViewAreaRadius(int $distance) : void{
+		if($this->isProtocol975PreSpawn()){
+			if($this->protocol975PreSpawnRadiusSent){
+				$this->logger->warning("Suppressing duplicate pre-spawn ChunkRadiusUpdatedPacket for protocol 975");
+				return;
+			}
+			$this->protocol975PreSpawnRadiusSent = true;
+		}
 		$this->sendDataPacket(ChunkRadiusUpdatedPacket::create($distance));
 	}
 
 	public function syncViewAreaCenterPoint(Vector3 $newPos, int $viewDistance) : void{
+		if($this->isProtocol975PreSpawn()){
+			if($this->protocol975PreSpawnPublisherSent){
+				$this->logger->warning("Suppressing duplicate pre-spawn NetworkChunkPublisherUpdatePacket for protocol 975");
+				return;
+			}
+			$this->protocol975PreSpawnPublisherSent = true;
+		}
 		$this->sendDataPacket(NetworkChunkPublisherUpdatePacket::create(BlockPosition::fromVector3($newPos), $viewDistance * 16, [])); //blocks, not chunks >.>
 	}
 
@@ -1474,6 +2061,9 @@ class NetworkSession{
 	}
 
 	public function onChatMessage(Translatable|string $message) : void{
+		if($this->shouldSuppressTextPacketsForProtocol975()){
+			return;
+		}
 		if($message instanceof Translatable){
 			if(!$this->server->isLanguageForced()){
 				$this->sendDataPacket(TextPacket::translation(...$this->prepareClientTranslatableMessage($message)));
@@ -1486,6 +2076,9 @@ class NetworkSession{
 	}
 
 	public function onJukeboxPopup(Translatable|string $message) : void{
+		if($this->shouldSuppressTextPacketsForProtocol975()){
+			return;
+		}
 		$parameters = [];
 		if($message instanceof Translatable){
 			if(!$this->server->isLanguageForced()){
@@ -1498,10 +2091,16 @@ class NetworkSession{
 	}
 
 	public function onPopup(string $message) : void{
+		if($this->shouldSuppressTextPacketsForProtocol975()){
+			return;
+		}
 		$this->sendDataPacket(TextPacket::popup($message));
 	}
 
 	public function onTip(string $message) : void{
+		if($this->shouldSuppressTextPacketsForProtocol975()){
+			return;
+		}
 		$this->sendDataPacket(TextPacket::tip($message));
 	}
 
@@ -1519,11 +2118,44 @@ class NetworkSession{
 	private function sendChunkPacket(string $chunkPacket, \Closure $onCompletion, World $world) : void{
 		$world->timings->syncChunkSend->startTiming();
 		try{
+			$this->validateAndTraceCompressedBatch($chunkPacket, $this->getProtocolId(), "chunk");
 			$this->queueCompressed($chunkPacket);
 			$onCompletion();
 		}finally{
 			$world->timings->syncChunkSend->stopTiming();
 		}
+	}
+
+	private function buildSynchronousChunkBatch(World $world, int $chunkX, int $chunkZ) : string{
+		$chunk = $world->getChunk($chunkX, $chunkZ);
+		if($chunk === null){
+			throw new \InvalidArgumentException("Cannot send unloaded chunk $chunkX $chunkZ synchronously");
+		}
+
+		$protocolId = $this->getProtocolId();
+		$dimensionId = DimensionIds::OVERWORLD;
+		$subCount = ChunkSerializer::getSubChunkCount($chunk, $dimensionId);
+		$payload = ChunkSerializer::serializeFullChunk($chunk, $dimensionId, $this->getTypeConverter(), null, $protocolId);
+
+		$stream = new ByteBufferWriter();
+		PacketBatch::encodePackets($stream, $protocolId, [
+			LevelChunkPacket::create(
+				new ChunkPosition($chunkX, $chunkZ),
+				$dimensionId,
+				$subCount,
+				false,
+				null,
+				$payload
+			)
+		]);
+
+		$batch = $this->server->prepareBatch($stream->getData(), $protocolId, $this->compressor, true, Timings::$playerNetworkSendCompressSessionBuffer);
+		if(!is_string($batch)){
+			throw new \RuntimeException("Expected synchronous chunk batch to be encoded immediately");
+		}
+
+		$this->logger->debug("Built synchronous chunk batch for protocol $protocolId chunkX=$chunkX chunkZ=$chunkZ subCount=$subCount payload=" . strlen($payload));
+		return $batch;
 	}
 
 	/**
@@ -1533,6 +2165,16 @@ class NetworkSession{
 	 */
 	public function startUsingChunk(int $chunkX, int $chunkZ, \Closure $onCompletion) : void{
 		$world = $this->player->getLocation()->getWorld();
+		if($this->getProtocolId() === ProtocolInfo::PROTOCOL_1_26_20){
+			$gate = $this->protocol975SpawnGate ??= new Protocol975SpawnGate();
+			if($gate->getState() === Protocol975SpawnGate::STATE_INITIALIZING){
+				$gate->startSendingChunks();
+			}
+			$this->pendingInitialSpawnChunks++;
+			$this->logger->warning("975 Loading: Chunk requested ({$this->pendingInitialSpawnChunks} pending)");
+			$this->sendChunkPacket($this->buildSynchronousChunkBatch($world, $chunkX, $chunkZ), $onCompletion, $world);
+			return;
+		}
 		$promiseOrPacket = ChunkCache::getInstance($world, $this->compressor)->request($chunkX, $chunkZ, $this->getTypeConverter());
 		if(is_string($promiseOrPacket)){
 			$this->sendChunkPacket($promiseOrPacket, $onCompletion, $world);
