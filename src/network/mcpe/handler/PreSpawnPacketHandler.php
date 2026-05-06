@@ -29,10 +29,13 @@ use pocketmine\network\mcpe\cache\StaticPacketCache;
 use pocketmine\network\mcpe\InventoryManager;
 use pocketmine\network\mcpe\NetworkSession;
 use pocketmine\network\mcpe\protocol\ItemRegistryPacket;
+use pocketmine\network\mcpe\protocol\NetworkStackLatencyPacket;
 use pocketmine\network\mcpe\protocol\PlayerAuthInputPacket;
 use pocketmine\network\mcpe\protocol\ProtocolInfo;
 use pocketmine\network\mcpe\protocol\RequestChunkRadiusPacket;
+use pocketmine\network\mcpe\protocol\ServerboundLoadingScreenPacket;
 use pocketmine\network\mcpe\protocol\StartGamePacket;
+use pocketmine\network\mcpe\protocol\UpdateClientOptionsPacket;
 use pocketmine\network\mcpe\protocol\types\BlockPosition;
 use pocketmine\network\mcpe\protocol\types\BoolGameRule;
 use pocketmine\network\mcpe\protocol\types\CacheableNbt;
@@ -121,6 +124,11 @@ class PreSpawnPacketHandler extends PacketHandler{
 				$typeConverter->getItemTypeDictionary()->getEntries(),
 			));
 
+			if($this->player->getViewDistance() < 0){
+				$this->session->getLogger()->debug("Initializing default view distance before client chunk radius request");
+				$this->player->setViewDistance($this->server->getViewDistance());
+			}
+
 			if($this->session->getProtocolId() >= ProtocolInfo::PROTOCOL_1_21_60){
 				$this->session->getLogger()->debug("Sending items");
 				$this->session->sendDataPacket(ItemRegistryPacket::create($typeConverter->getItemTypeDictionary()->getEntries()));
@@ -168,6 +176,10 @@ class PreSpawnPacketHandler extends PacketHandler{
 	}
 
 	public function handleRequestChunkRadius(RequestChunkRadiusPacket $packet) : bool{
+		if($this->session->getProtocolId() === ProtocolInfo::PROTOCOL_1_26_20 && $this->player->getViewDistance() >= 0){
+			$this->session->getLogger()->warning("Ignoring duplicate pre-spawn RequestChunkRadiusPacket for protocol 975 radius={$packet->radius}");
+			return true;
+		}
 		$this->player->setViewDistance($packet->radius);
 
 		return true;
@@ -177,5 +189,17 @@ class PreSpawnPacketHandler extends PacketHandler{
 		//the client will send this every tick once we start sending chunks, but we don't handle it in this stage
 		//this is very spammy so we filter it out
 		return true;
+	}
+
+	public function handleNetworkStackLatency(NetworkStackLatencyPacket $packet) : bool{
+		return $this->session->handlePreSpawnNetworkStackLatency($packet);
+	}
+
+	public function handleServerboundLoadingScreen(ServerboundLoadingScreenPacket $packet) : bool{
+		return $this->session->handlePreSpawnLoadingScreen();
+	}
+
+	public function handleUpdateClientOptions(UpdateClientOptionsPacket $packet) : bool{
+		return $this->session->handlePreSpawnClientOptions();
 	}
 }
