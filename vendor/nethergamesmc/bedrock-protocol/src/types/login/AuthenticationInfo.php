@@ -19,12 +19,9 @@ namespace pocketmine\network\mcpe\protocol\types\login;
  */
 final class AuthenticationInfo{
 
-	/** @required */
 	public int $AuthenticationType;
 
-	/** @required */
-	public string $Certificate;
+	public ?string $Certificate = null;
 
-	/** @required */
-	public string $Token;
+	public ?string $Token = null;
 }
