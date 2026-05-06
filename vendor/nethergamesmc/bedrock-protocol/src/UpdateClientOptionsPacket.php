@@ -24,24 +24,34 @@ class UpdateClientOptionsPacket extends DataPacket implements ServerboundPacket{
 	public const NETWORK_ID = ProtocolInfo::UPDATE_CLIENT_OPTIONS_PACKET;
 
 	private ?GraphicsMode $graphicsMode;
+	private bool $filterProfanity = false;
 
 	/**
 	 * @generate-create-func
 	 */
-	public static function create(?GraphicsMode $graphicsMode) : self{
+	public static function create(?GraphicsMode $graphicsMode, bool $filterProfanity = false) : self{
 		$result = new self;
 		$result->graphicsMode = $graphicsMode;
+		$result->filterProfanity = $filterProfanity;
 		return $result;
 	}
 
 	public function getGraphicsMode() : ?GraphicsMode{ return $this->graphicsMode; }
 
+	public function getFilterProfanity() : bool{ return $this->filterProfanity; }
+
 	protected function decodePayload(ByteBufferReader $in, int $protocolId) : void{
 		$this->graphicsMode = CommonTypes::readOptional($in, fn() => GraphicsMode::fromPacket(Byte::readUnsigned($in)));
+		if($protocolId >= 975){
+			$this->filterProfanity = Byte::readUnsigned($in) !== 0;
+		}
 	}
 
 	protected function encodePayload(ByteBufferWriter $out, int $protocolId) : void{
 		CommonTypes::writeOptional($out, $this->graphicsMode, fn(ByteBufferWriter $out, GraphicsMode $v) => Byte::writeUnsigned($out, $v->value));
+		if($protocolId >= 975){
+			Byte::writeUnsigned($out, $this->filterProfanity ? 1 : 0);
+		}
 	}
 
 	public function handle(PacketHandlerInterface $handler) : bool{
