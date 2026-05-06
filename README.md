@@ -8,9 +8,9 @@ Custom PocketMine-MP 5 fork built for production Bedrock servers. Fully optimize
 |---|---|
 | **1.20.0 - 1.20.80** | 589, 594, 618, 622, 630, 649, 662, 671 |
 | **1.21.0 - 1.21.130** | 685, 686, 712, 729, 748, 766, 776, 786, 800, 818, 819, 827, 844, 859, 860, 898 |
-| **1.26.0 - 1.26.10** | 924, 944 |
+| **1.26.0 - 1.26.20** | 924, 944, 975 |
 
-> **26 protocol versions** supported simultaneously. Players on any version from 1.20.0 to 1.26.10 can connect to the same server.
+> **27 protocol versions** supported simultaneously. Players on any version from 1.20.0 to 1.26.20 can connect to the same server.
 
 ## Optimizations
 
