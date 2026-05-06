@@ -23,15 +23,23 @@ declare(strict_types=1);
 
 namespace pocketmine\network\mcpe\handler;
 
+use pocketmine\network\mcpe\NetworkSession;
+use pocketmine\network\mcpe\protocol\NetworkStackLatencyPacket;
 use pocketmine\network\mcpe\protocol\PlayerAuthInputPacket;
 use pocketmine\network\mcpe\protocol\PlayerSkinPacket;
+use pocketmine\network\mcpe\protocol\RequestChunkRadiusPacket;
+use pocketmine\network\mcpe\protocol\ServerboundLoadingScreenPacket;
 use pocketmine\network\mcpe\protocol\SetLocalPlayerAsInitializedPacket;
+use pocketmine\network\mcpe\protocol\UpdateClientOptionsPacket;
 
 final class SpawnResponsePacketHandler extends PacketHandler{
 	/**
 	 * @phpstan-param \Closure() : void $responseCallback
 	 */
-	public function __construct(private \Closure $responseCallback){}
+	public function __construct(
+		private NetworkSession $session,
+		private \Closure $responseCallback
+	){}
 
 	public function handleSetLocalPlayerAsInitialized(SetLocalPlayerAsInitializedPacket $packet) : bool{
 		($this->responseCallback)();
@@ -46,8 +54,22 @@ final class SpawnResponsePacketHandler extends PacketHandler{
 	}
 
 	public function handlePlayerAuthInput(PlayerAuthInputPacket $packet) : bool{
-		//the client will send this every tick once we start sending chunks, but we don't handle it in this stage
-		//this is very spammy so we filter it out
+		return true;
+	}
+
+	public function handleNetworkStackLatency(NetworkStackLatencyPacket $packet) : bool{
+		return $this->session->handlePreSpawnNetworkStackLatency($packet);
+	}
+
+	public function handleServerboundLoadingScreen(ServerboundLoadingScreenPacket $packet) : bool{
+		return $this->session->handlePreSpawnLoadingScreen();
+	}
+
+	public function handleUpdateClientOptions(UpdateClientOptionsPacket $packet) : bool{
+		return $this->session->handlePreSpawnClientOptions();
+	}
+
+	public function handleRequestChunkRadius(RequestChunkRadiusPacket $packet) : bool{
 		return true;
 	}
 }
