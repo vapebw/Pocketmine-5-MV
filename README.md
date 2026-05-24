@@ -3,7 +3,7 @@
 Custom PocketMine-MP 5 fork built for production Bedrock servers. Fully optimized with native multiversion protocol support, Bedrock-native command autocompletion, and per-version data translation layers.
 
 > [!WARNING]
-> This fork is not longer maintaned, we are currently moving to a new Fork [Pocketmine-MV](https://github.com/vapebw/Pocketmine-MV)
+> This fork is not longer maintaned
 
 ## Supported Versions
 
